@@ -1,0 +1,12 @@
+google-genai
+PyMuPDF
+Pillow
+opencv-python
+pydantic
+pandas
+openpyxl
+streamlit
+python-dotenv
+pytest
+anthropic==1.13.0
+zxing-cpp==3.1.1

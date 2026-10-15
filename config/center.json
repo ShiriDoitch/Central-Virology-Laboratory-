@@ -1,0 +1,6 @@
+{
+  "_comment": "אורך מספר מרכזי בספרות (כולל), לפי שימוש; ברירת מחדל בקוד כשמפתח חסר: 5 עד 9. מרכזי עם תווית לא תלוי באורך. נמדד על חלק 1 בלבד, לבדוק על חלק 2. unlabeled ו-barcode_fill נשארו 6 עד 6 בכוונה עד אישור (ראו CLAUDE.md, מדידת הטווח הרחב): 5 עד 9 שם החמיר 29 תאים (unlabeled) ו-3 תאים (barcode_fill).",
+  "unlabeled": {"min_digits": 6, "max_digits": 6},
+  "barcode_match": {"min_digits": 5, "max_digits": 9},
+  "barcode_fill": {"min_digits": 6, "max_digits": 6}
+}

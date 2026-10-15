@@ -1,0 +1,4 @@
+{
+  "strong": {"per_minute": 5, "per_day": 20, "stop_at": 18, "min_interval_s": 13},
+  "small": {"per_minute": 15, "per_day": 500, "stop_at": 490, "min_interval_s": 5}
+}

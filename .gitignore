@@ -1,0 +1,12 @@
+# סודות
+.env
+
+# נתונים ותוצרים (לא ב-git)
+data/
+outputs/
+
+# סביבה וקבצים זמניים של Python
+.venv/
+__pycache__/
+*.pyc
+.pytest_cache/
