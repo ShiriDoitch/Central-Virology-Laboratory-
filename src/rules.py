@@ -783,7 +783,9 @@ def apply_center_barcode(d: Decision, barcodes: list[dict] | None, exclude: set[
     values = [v for v in center_barcode_values(barcodes) if v not in (exclude or ())]   # לבדיקת השוויון (כלל א) ולרמז (כלל ג)
     if not values:
         return d
-    if set(model) == set(values):
+    if set(model) == set(values) and not (len(model) > 1 and F_CENTER_MISMATCH in d.flags):
+        # הסכמה עם הברקוד מאשרת קריאה, לא תפקיד: כשכמה מספרים בלי תווית מתחרים (center_mismatch) והברקוד מכיל את אותם מספרים
+        # (למשל גם את מספר ההתחייבות), אין ראיה למי מהם המרכזי, והדגל נשאר
         return d.model_copy(update={"flags": [], "alternatives": [], "hints": _dedupe([*d.hints, H_CENTER_BARCODE_AGREES])})
     return d.model_copy(update={"hints": _dedupe([*d.hints, f"center_barcode_differs:{join_multi(values)}"])})
 

@@ -57,10 +57,17 @@ def test_center_values_ignore_non_digits_other_formats_and_duplicates():
 # ---------- כללי ההחלטה ----------
 
 def test_a_model_equals_barcode_set_becomes_green_without_flags():
-    d = Decision(value="111111 ; 222222", raw="111111 ; 222222", flags=["center_mismatch", "low_confidence"], alternatives=["111111", "222222"])
+    d = Decision(value="111111 ; 222222", raw="111111 ; 222222", flags=["low_confidence"], alternatives=["111111", "222222"])
     out = apply_center_barcode(d, BC("222222", "111111"))
     assert out.value == "111111 ; 222222" and out.flags == [] and out.alternatives == []
     assert "center_barcode_agrees" in out.hints
+
+
+def test_a_multi_value_with_center_mismatch_is_not_cleared_by_the_barcode():
+    """center_mismatch = כמה מספרים בלי תווית מתחרים על התפקיד; הברקוד מאשר קריאה בלבד (ראו רגרסיה חלק 2 עמוד 5)."""
+    d = Decision(value="111111 ; 222222", raw="111111 ; 222222", flags=["center_mismatch"], alternatives=["111111", "222222"])
+    out = apply_center_barcode(d, BC("222222", "111111"))
+    assert out.flags == ["center_mismatch"] and "center_barcode_agrees" not in out.hints
 
 
 def test_a_requires_equality_not_containment():
@@ -171,3 +178,28 @@ def test_barcode_equal_to_commitment_number_is_not_counted_as_center(monkeypatch
     out = apply_center_barcode(d, BC("111111", "944000351"), exclude={"944000351"})
     assert out.flags == [] and "center_barcode_agrees" in out.hints
     assert apply_center_barcode(Decision(), BC("944000351"), exclude={"944000351"}).value is None
+
+
+# ---------- רגרסיה: חלק 2 עמוד 5 (ירוק שגוי) ----------
+
+P5 = Path("outputs/part2_eval/p5.json")
+
+
+@pytest.mark.skipif(not P5.exists(), reason="needs the saved part 2 run")
+def test_part2_page5_center_stays_orange():
+    """הבאג המקורי, מהתשובה השמורה של עמוד 5 בחלק 2: מעבר 1 + מעבר 2 נותנים "436703 ; 946622" (436703 הוא מספר ההתחייבות)
+    עם center_mismatch, והברקוד מכיל בדיוק את שני המספרים. הדגל חייב להישאר (קודם הוצג ירוק)."""
+    from src.schema import PageExtraction
+    d = json.loads(P5.read_text(encoding="utf-8"))
+    r = PageExtraction.model_validate(d["pass1"])
+    out = decide_center(r.numbers, d["pass2"], d["barcodes"])
+    assert "center_mismatch" in out.flags
+    assert out.value == "436703 ; 946622"
+
+
+def test_barcode_agreement_still_greens_a_single_value_and_labeled_values():
+    numbers = [NumberCandidate(value="946622", label="מרכזי", confidence=0.95)]
+    assert decide_center(numbers, None, BC("946622")).flags == []
+    two_labeled = [NumberCandidate(value="944963", label="מרכזי", confidence=0.95),
+                   NumberCandidate(value="944964", label="מרכזי", confidence=0.95)]
+    assert decide_center(two_labeled, None, BC("944963", "944964")).flags == []

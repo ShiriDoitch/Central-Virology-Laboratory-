@@ -46,6 +46,7 @@ class SenderMatcher:
                 pairs.add((_norm(a), canon))
         for alias, canon in {**branches, **(learned or {})}.items():
             pairs.add((_norm(alias), canon))
+        self._branch_aliases = [a for a in (_norm(b) for b in branches) if a]    # סניפים/מוסדות שממופים לקופת האם
         self.canonical = set(canonical) | set((learned or {}).values()) | set(branches.values())
         self._pairs = sorted((p for p in pairs if p[0]), key=lambda p: -len(p[0]))  # הכינוי הארוך קודם
         self._labs = [_norm(n) for n in lab_names]
@@ -62,6 +63,11 @@ class SenderMatcher:
         if not n or any(SequenceMatcher(None, n, lab).ratio() >= LAB_FUZZY for lab in self._labs):
             return None, True
         return None, False
+
+    def is_branch(self, text: str) -> bool:
+        """האם הטקסט מזכיר סניף/מוסד שממופה לקופת אם (config/senders.json: "branches"), כלומר ראיה למוסד ספציפי מתחת לקופה."""
+        n = _norm(text)
+        return any(a in n for a in self._branch_aliases)
 
     def fuzzy(self, text: str) -> str | None:
         """התאמה מקורבת כשאין התאמה מדויקת: רצף מילים בטקסט דומה (>= FUZZY_MIN) לכינוי (או לשם קנוני).
@@ -202,6 +208,12 @@ def decide_sender(mentions: list[SenderMention], matcher: SenderMatcher | None =
         if disagree and F_CONFLICT not in flags:
             flags.append(F_CONFLICT)
     ev = evidence[top]
+    branch_texts = [m.text for m in ev if top in matcher.hmos and matcher.is_branch(m.text)]
+    if branch_texts and F_CONFLICT not in flags:
+        # קופה שנבחרה, אבל בטופס יש גם ראיה למוסד ספציפי מתחתיה (חותמת/כותרת של בית חולים): השולח האמיתי כנראה המוסד
+        # ולא הקופה, ואין לקוד דרך לדעת איזה משניהם נכון: כתום, והמוסד נשמר כחלופה
+        flags.append(F_CONFLICT)
+        others = [*others, *branch_texts]
     if all(m.where == "handwritten" for m in ev):
         flags.append(F_HANDWRITTEN)
     if max(m.confidence for m in ev) < LOW_CONFIDENCE:

@@ -181,3 +181,20 @@ def test_learned_alias_from_config(tmp_path):
     assert decide_sender([mention("מרפאת ארבל")], load_matcher(tmp_path)).value == OTHER
     senders.add_alias("ארבל", "כללית", tmp_path)
     assert decide_sender([mention("מרפאת ארבל")], load_matcher(tmp_path)).value == "כללית"
+
+
+# ---------- רגרסיה: חלק 2 עמוד 10 (ירוק שגוי) ----------
+
+def test_hmo_logo_with_branch_institution_stamp_is_orange_with_the_institution_as_alternative():
+    """לוגו כללית (תבנית הטופס) וחותמת של מוסד ממופה (רבין/השרון, תפקיד "יעד"): הקופה נבחרת, אבל יש ראיה למוסד
+    ספציפי מתחתיה, ולכן כתום והמוסד ב-alternatives (באג: כללית הוצגה בירוק וה"אמת" היא השרון)."""
+    out = decide_sender([mention("כללית", where="logo", role="sender", conf=0.9),
+                         mention("מרכז רפואי רבין קמפוס גולדה השרון מזכירות המעבדות", where="stamp", role="destination", conf=0.9)], M)
+    assert out.value == "כללית"
+    assert F_CONFLICT in out.flags
+    assert any("רבין" in a for a in out.alternatives)
+
+
+def test_hmo_logo_alone_stays_green():
+    out = decide_sender([mention("כללית", where="logo", role="sender", conf=1.0)], M)
+    assert out.value == "כללית" and out.flags == []
