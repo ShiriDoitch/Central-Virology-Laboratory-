@@ -12,7 +12,8 @@ from src.confirm import FIELD_REGION, field_crop, flag_chips_html, md_code, md_t
 from src.export import COLUMNS, CONFIRMED, FIELD_KEYS, GREEN, ORANGE, YELLOW, _readings, build_rows, build_workbook, pass2_issues, skip_reason
 from src.intake import pdf_to_images, rotate_jpeg
 from src.schema import PageExtraction
-from src.upload import cleanup_stale_uploads, process_upload, to_pdf_bytes  # noqa: F401  (to_pdf_bytes: לשימוש חיצוני / בדיקות)
+from src.privacy import GENERIC_ERROR_HE, log_server_error
+from src.upload import UploadRejected, cleanup_stale_uploads, process_upload, to_pdf_bytes  # noqa: F401  (to_pdf_bytes: לשימוש חיצוני / בדיקות)
 
 SAMPLE_DIR = Path("outputs/clean_part1_v4b")      # הריצה השמורה (בלי API)
 SAMPLE_PDF = Path("data/clean_part1.pdf")         # עמודים נקיים, בלי סימון צהוב
@@ -335,7 +336,8 @@ if sample_clicked:
         st.session_state["is_sample"] = True
         st.session_state["field_crops"], st.session_state["name_overrides"] = {}, {}
     except Exception as e:
-        st.error(f"טעינת הדוגמה נכשלה ({type(e).__name__}). האם הריצה נמצאת ב-{SAMPLE_DIR}?")
+        log_server_error("load_sample", e)
+        st.error("טעינת הדוגמה נכשלה. פרטים במסוף השרת.")
 if run_clicked and upload is not None:
     if upload.size > MAX_UPLOAD_MB * 1024 * 1024:
         st.error(f"הקובץ גדול מדי (מקסימום {MAX_UPLOAD_MB}MB)")
@@ -348,8 +350,11 @@ if run_clicked and upload is not None:
                 upload.name, upload.getvalue(), bar)
             st.session_state["is_sample"] = False
             st.session_state["name_overrides"] = {}
+        except UploadRejected as e:                      # הודעה שכתבנו בעצמנו (למשל יותר מדי עמודים), בלי טקסט מהקובץ
+            st.error(str(e))
         except Exception as e:
-            st.error(f"העיבוד נכשל: {e}")
+            log_server_error("process_upload", e)         # הפרטים האמיתיים רק במסוף השרת
+            st.error(GENERIC_ERROR_HE)
 
 pages = st.session_state.get("pages")
 images = st.session_state.get("images", {})

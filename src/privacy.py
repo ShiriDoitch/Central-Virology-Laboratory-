@@ -6,7 +6,9 @@ production = מה שהמעבדה מריצה על מטופלים אמיתיים: 
 
 הערך נקרא ממשתנה הסביבה בכל קריאה (לא נשמר), כדי שאפשר יהיה להחליף אותו בבדיקות. ריק או חסר = dev. ערך שאינו dev
 ואינו production (שגיאת כתיב) נחשב production: בטעות הפרטיות נכשלים לצד הבטוח."""
+import logging
 import os
+import sys
 from pathlib import Path
 
 from dotenv import load_dotenv
@@ -14,6 +16,14 @@ from dotenv import load_dotenv
 load_dotenv()
 
 DEV, PRODUCTION = "dev", "production"
+GENERIC_ERROR_HE = "העיבוד נכשל, נסי שוב או פני לתמיכה"
+_log = logging.getLogger("commitments")
+if not _log.handlers:
+    _handler = logging.StreamHandler(sys.stderr)      # מסוף השרת בלבד: לא מגיע לדפדפן
+    _handler.setFormatter(logging.Formatter("%(asctime)s %(levelname)s %(message)s"))
+    _log.addHandler(_handler)
+    _log.setLevel(logging.INFO)
+    _log.propagate = False
 
 
 def privacy_mode() -> str:
@@ -36,3 +46,15 @@ def safe_write_text(path: Path | str, text: str, encoding: str = "utf-8") -> boo
     path.parent.mkdir(parents=True, exist_ok=True)
     path.write_text(text, encoding=encoding)
     return True
+
+
+def log_server_error(context: str, error: BaseException | str | None) -> None:
+    """רושם את הכשל האמיתי למסוף השרת (stderr) בלבד, לא למסך המשתמש. ב-dev: הטקסט המלא (כולל traceback לחריגה), לצורך דיבוג.
+    ב-production: רק שם הסוג, כי טקסט של חריגה או של תגובת API עלול להכיל נתוני מטופל (למשל ערך שנכשל באימות)."""
+    if is_production():
+        name = type(error).__name__ if isinstance(error, BaseException) else "error"
+        _log.error("%s failed: %s", context, name)
+    elif isinstance(error, BaseException):
+        _log.error("%s failed: %s", context, error, exc_info=error)
+    else:
+        _log.error("%s failed: %s", context, error)

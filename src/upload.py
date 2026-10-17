@@ -10,8 +10,13 @@ from PIL import Image, ImageOps
 
 from .confirm import FIELD_REGION, field_crop
 from .intake import pdf_to_images, rotate_jpeg
+from .privacy import log_server_error
 
 MAX_PAGES = 40
+
+
+class UploadRejected(ValueError):
+    """דחיית קובץ בהודעה שכתבנו בעצמנו (בטוחה להצגה למשתמש). כל חריגה אחרת מוצגת בהודעה כללית והפרטים נרשמים בשרת."""
 # קובצי ה-PDF הזמניים של ההעלאות נכתבים לתיקייה ייעודית בפרויקט (ב-.gitignore) ולא לשורש ה-temp של המערכת, כדי שאם התהליך
 # נהרג באמצע, שאריות עם נתוני מטופל יימצאו במקום ידוע וינוקו בהפעלה הבאה (cleanup_stale_uploads).
 UPLOAD_TMP_DIR = Path(__file__).resolve().parent.parent / "tmp_uploads"
@@ -58,14 +63,17 @@ def process_upload(name: str, data: bytes, progress) -> tuple[list[dict], dict[i
         with pymupdf.open(tmp) as doc:
             total = len(doc)
         if total > MAX_PAGES:
-            raise ValueError(f"הקובץ כולל {total} עמודים (מקסימום {MAX_PAGES})")
+            raise UploadRejected(f"הקובץ כולל {total} עמודים (מקסימום {MAX_PAGES})")
         pages, images, crops = [], {}, {}
         for p in range(1, total + 1):
             progress.progress((p - 1) / total, text=f"מעבד עמוד {p} מתוך {total}")
             try:
                 res = process_page(tmp, p)
             except Exception as e:                       # עמוד אחד שנכשל לא מפיל את כל הריצה
+                log_server_error(f"process_page {p}", e)
                 res = {"page": p, "pass1": {"ok": False, "error": type(e).__name__}, "pass2": None}
+            if not (res.get("pass1") or {}).get("ok"):
+                log_server_error(f"extract page {p}", (res.get("pass1") or {}).get("error"))     # תגובת ה-API המלאה: רק בשרת
             pages.append(res)
             img = pdf_to_images(tmp, dpi=110, pages=[p])[0]
             applied = (res.get("rotation") or {}).get("applied")

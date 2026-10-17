@@ -145,7 +145,7 @@ def skip_reason(page_result: dict) -> str | None:
     if not r1:
         return "אין תוצאת חילוץ לעמוד"
     if not r1.get("ok"):
-        return f"החילוץ נכשל: {r1.get('error', 'unknown')}"
+        return "החילוץ נכשל (פרטים במסוף השרת)"      # לא מציגים את טקסט השגיאה של ה-API: הוא עלול לכלול נתוני בקשה
     if not build_rows(page_result):
         return "המודל סימן: לא טופס התחייבות (ולא נמצא מספר התחייבות)"
     return None
