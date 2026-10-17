@@ -133,9 +133,9 @@ def load_run(run_dir: Path, pages: list[int]) -> tuple[dict[int, dict], dict[int
     return results, regions
 
 
-def evaluate(pages: list[int] | None = None, run_dir: Path | None = None) -> dict:
-    """run_dir = תיקיית ריצה מלאה (שני מעברים); בלעדיה: מעבר ראשון בלבד מהמטמון."""
-    truth = load_truth()
+def evaluate(pages: list[int] | None = None, run_dir: Path | None = None, truth_path: Path = TRUTH_PATH) -> dict:
+    """run_dir = תיקיית ריצה מלאה (שני מעברים); בלעדיה: מעבר ראשון בלבד מהמטמון. truth_path: טבלת האמת (ברירת מחדל חלק 1)."""
+    truth = load_truth(truth_path)
     pages = pages or sorted(truth)
     if run_dir:
         results, regions = load_run(run_dir, pages)
