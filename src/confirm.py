@@ -4,7 +4,7 @@ import base64
 import html
 import re
 
-from .crop import choose_box, region_fractions
+from .crop import REVIEW_MAX_GROW, choose_box, edges_touching_ink, expand_receipt_fractions, region_fractions, review_fractions
 from .export import COMMITMENT_ROW_KEY, FIELD_KEYS, NAME_KEYS, Cell
 from .intake import render_region
 from .rules import normalize_date
@@ -93,7 +93,18 @@ def field_crop(pdf_path: str, page_res: dict, key: str) -> bytes | None:
         if not fr:
             return None
         applied = (page_res.get("rotation") or {}).get("applied") or 0
-        return render_region(pdf_path, page_res["page"], fr, scale=NAME_CROP_SCALE, rotation=applied)
+        fr = review_fractions(fr)                       # החיתוך שמוצג לאדם נדיב יותר מזה שהמודל קרא (הקריאה עצמה לא משתנה)
+        jpeg = render_region(pdf_path, page_res["page"], fr, scale=NAME_CROP_SCALE, rotation=applied)
+        for _ in range(REVIEW_MAX_GROW):                # דיו שעדיין נוגע בקצה = ספרות שנחתכו: מרחיבים את הצד הזה ומרנדרים שוב
+            sides = edges_touching_ink(jpeg)
+            if not sides:
+                break
+            wider = expand_receipt_fractions(fr, sides & {"left", "right", "top", "bottom"})
+            if wider == fr:
+                break
+            fr = wider
+            jpeg = render_region(pdf_path, page_res["page"], fr, scale=NAME_CROP_SCALE, rotation=applied)
+        return jpeg
     except Exception:
         return None
 

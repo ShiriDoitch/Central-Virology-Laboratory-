@@ -148,3 +148,20 @@ def crop_image(img: bytes, fractions: tuple[float, float, float, float], scale: 
     out = io.BytesIO()
     region.save(out, "JPEG", quality=quality)
     return out.getvalue()
+
+
+# חיתוך לבדיקה אנושית (מסך האישור): נדיב, בניגוד לחיתוך שמוזן חזרה למודל (מדויק). ה-box של המודל לפעמים צר או מוסט וחותך
+# בדיוק את הספרות האחרונות, שהן היחידות שמבדילות בין מספרים דומים (למשל שלושה מספרי התחייבות זה מעל זה).
+REVIEW_MARGIN = 0.20       # 20% מגודל החיתוך מכל צד
+REVIEW_MIN_PAD = 0.03      # ולפחות 3% מהעמוד
+REVIEW_MAX_GROW = 2        # עד כמה הרחבות נוספות כשהדיו עדיין נוגע בקצה
+
+
+def review_fractions(fractions: tuple[float, float, float, float], margin: float = REVIEW_MARGIN,
+                     min_pad: float = REVIEW_MIN_PAD) -> tuple[float, float, float, float]:
+    """מרחיב את חלון החיתוך שהמעבר השני השתמש בו לחלון נדיב לקורא אנושי. חלון שחורג מהעמוד מוזז פנימה ומורחב, לא נחתך."""
+    x0, y0, x1, y1 = fractions
+    pad_x, pad_y = max((x1 - x0) * margin, min_pad), max((y1 - y0) * margin, min_pad)
+    fx0, fx1 = _shift_into_page(x0 - pad_x, x1 + pad_x)
+    fy0, fy1 = _shift_into_page(y0 - pad_y, y1 + pad_y)
+    return (fx0, fy0, fx1, fy1)
