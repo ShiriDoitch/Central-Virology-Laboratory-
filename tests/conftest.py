@@ -20,6 +20,12 @@ class FakeClock:
 
 
 @pytest.fixture(autouse=True)
+def dev_privacy_mode(monkeypatch):
+    """הבדיקות רצות ב-dev (כמו ברירת המחדל), גם אם ב-.env של המפתחת הוגדר PRIVACY_MODE אחר. בדיקות production מגדירות אותו בעצמן."""
+    monkeypatch.delenv("PRIVACY_MODE", raising=False)
+
+
+@pytest.fixture(autouse=True)
 def quota_tracker(monkeypatch, tmp_path):
     clock = FakeClock()
     tracker = QuotaTracker(path=tmp_path / "quota_state.json", config=DEFAULT_CONFIG,

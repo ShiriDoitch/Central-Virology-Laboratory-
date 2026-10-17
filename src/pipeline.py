@@ -14,6 +14,7 @@ from .barcode import decode_pdf_page
 from .extractor import DAILY_QUOTA_MSG
 from .intake import pdf_to_images, render_region, rotate_jpeg
 from .orientation import text_axis
+from .privacy import is_production
 from .rules import apply_field_validity, commitment_numbers, decide_center, decide_id, patient_labels_missing
 from .schema import Box, PageExtraction
 
@@ -107,7 +108,9 @@ def render_model_summary(stats: dict) -> str:
 
 
 def save_debug_images(out_dir: Path, page: int, page_jpeg: bytes, crops: dict[str, bytes], boxes: dict) -> None:
-    """שומר את החיתוכים ותמונת עמוד עם ה-boxes מצוירים (לבדיקה ויזואלית)."""
+    """שומר את החיתוכים ותמונת עמוד עם ה-boxes מצוירים (לבדיקה ויזואלית). ב-production: לא שומר כלום."""
+    if is_production():
+        return
     out_dir.mkdir(parents=True, exist_ok=True)
     for kind, data in crops.items():
         (out_dir / f"p{page}_{kind}.jpg").write_bytes(data)

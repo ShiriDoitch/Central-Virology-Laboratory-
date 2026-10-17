@@ -11,7 +11,8 @@ from pathlib import Path
 
 os.environ["EXTRACT_PROVIDER"] = "anthropic"          # חייב להיות לפני טעינת ההגדרות; ברירת המחדל בקובץ נשארת gemini
 
-from src import extractor                                # noqa: E402
+from src import extractor
+from src.privacy import safe_write_text                                # noqa: E402
 from src.pipeline import process_page, sum_stats         # noqa: E402
 from run_part1 import parse_pages                        # noqa: E402
 
@@ -29,7 +30,7 @@ def main(spec: str) -> None:
     stopped = None
     for p in parse_pages(spec, total):
         res = process_page(PDF, p, force_second_pass=True, debug_dir=OUT)
-        (OUT / f"p{p}.json").write_text(json.dumps(res, ensure_ascii=False), encoding="utf-8")
+        safe_write_text(OUT / f"p{p}.json", json.dumps(res, ensure_ascii=False))
         stats += [res["stats"]["pass1"], res["stats"]["pass2"]]
         budget_hit = any(r and r.get("budget_exceeded") for r in (res["pass1"], res["pass2"]))
         print(f"page {p:>2}: pass1_ok={res['pass1'].get('ok')} second_pass={res['second_pass']} "

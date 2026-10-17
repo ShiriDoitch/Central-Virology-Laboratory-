@@ -3,24 +3,21 @@
 import io
 import json
 import os
-import tempfile
 from pathlib import Path
 
 import pandas as pd
-import pymupdf
 import streamlit as st
-from PIL import Image, ImageOps
 
 from src.confirm import FIELD_REGION, field_crop, name_suggestions, override_key, set_override, zoom_html
 from src.export import COLUMNS, CONFIRMED, FIELD_KEYS, GREEN, ORANGE, YELLOW, _readings, build_rows, build_workbook, pass2_issues, skip_reason
 from src.intake import pdf_to_images, rotate_jpeg
 from src.schema import PageExtraction
+from src.upload import cleanup_stale_uploads, process_upload, to_pdf_bytes  # noqa: F401  (to_pdf_bytes: לשימוש חיצוני / בדיקות)
 
 SAMPLE_DIR = Path("outputs/clean_part1_v4b")      # הריצה השמורה (בלי API)
 SAMPLE_PDF = Path("data/clean_part1.pdf")         # עמודים נקיים, בלי סימון צהוב
 TRUTH_PATH = Path("data/truth_part1.xlsx")
 MAX_UPLOAD_MB = 25
-MAX_PAGES = 40
 GREEN_HEX, ORANGE_HEX = "#" + GREEN.fgColor.rgb[-6:], "#" + ORANGE.fgColor.rgb[-6:]
 CONFIRMED_HEX = "#" + CONFIRMED.fgColor.rgb[-6:]      # שם שאושר על ידי המשתמש
 YELLOW_HEX = "#" + YELLOW.fgColor.rgb[-6:]            # ערך בכתב יד, שתי קריאות מסכימות: מבט לאישור
@@ -74,7 +71,14 @@ def he_flag(code: str, key: str | None = None) -> str:
         return f"{TITLES[key]} חסר"
     return FLAG_HE.get(code, code)
 
+@st.cache_resource(show_spinner=False)
+def _startup_cleanup() -> int:
+    """פעם אחת לכל תהליך שרת (לא בכל ריצה מחדש של הסקריפט): מוחק קובצי PDF זמניים שנשארו מריצה שקרסה (src/upload.py)."""
+    return cleanup_stale_uploads()
+
+
 st.set_page_config(page_title="חילוץ טפסי התחייבות", page_icon="📄", layout="wide")
+_startup_cleanup()
 st.markdown(
     """<style>
     html, body, [data-testid="stAppViewContainer"], [data-testid="stSidebar"], .main, .block-container {direction: rtl; text-align: right;}
@@ -105,50 +109,6 @@ def load_sample() -> tuple[list[dict], dict[int, bytes]]:
         applied = (res.get("rotation") or {}).get("applied")
         images[res["page"]] = rotate_jpeg(img, applied) if applied else img
     return pages, images
-
-
-def to_pdf_bytes(name: str, data: bytes) -> bytes:
-    """PDF נשאר; תמונה (כולל צילום טלפון עם EXIF) הופכת ל-PDF של עמוד אחד."""
-    if name.lower().endswith(".pdf"):
-        return data
-    img = ImageOps.exif_transpose(Image.open(io.BytesIO(data))).convert("RGB")
-    buf = io.BytesIO()
-    img.save(buf, "JPEG", quality=92)
-    return pymupdf.open(stream=buf.getvalue(), filetype="jpeg").convert_to_pdf()
-
-
-def process_upload(name: str, data: bytes, progress) -> tuple[list[dict], dict[int, bytes], dict[int, bytes | None]]:
-    """מריץ את הצינור המלא (שני מעברים) על כל עמוד. הקובץ הזמני נמחק בסיום; אין שמירה של PII."""
-    from src.pipeline import process_page  # ייבוא מאוחר: טעינת הדוגמה לא דורשת מפתח API
-
-    pdf_bytes = to_pdf_bytes(name, data)
-    fd, tmp = tempfile.mkstemp(suffix=".pdf")
-    try:
-        with os.fdopen(fd, "wb") as fh:
-            fh.write(pdf_bytes)
-        with pymupdf.open(tmp) as doc:
-            total = len(doc)
-        if total > MAX_PAGES:
-            raise ValueError(f"הקובץ כולל {total} עמודים (מקסימום {MAX_PAGES})")
-        pages, images, crops = [], {}, {}
-        for p in range(1, total + 1):
-            progress.progress((p - 1) / total, text=f"מעבד עמוד {p} מתוך {total}")
-            try:
-                res = process_page(tmp, p)
-            except Exception as e:                       # עמוד אחד שנכשל לא מפיל את כל הריצה
-                res = {"page": p, "pass1": {"ok": False, "error": type(e).__name__}, "pass2": None}
-            pages.append(res)
-            img = pdf_to_images(tmp, dpi=110, pages=[p])[0]
-            applied = (res.get("rotation") or {}).get("applied")
-            images[p] = rotate_jpeg(img, applied) if applied else img
-            if (res.get("pass1") or {}).get("ok"):
-                for region in dict.fromkeys(FIELD_REGION.values()):         # patient / barcode / commitment / receipt
-                    key = next(k for k, r in FIELD_REGION.items() if r == region)
-                    crops[(p, region)] = field_crop(tmp, res, key)
-        progress.progress(1.0, text="הסתיים")
-        return pages, images, crops
-    finally:
-        Path(tmp).unlink(missing_ok=True)
 
 
 # ---------- תצוגה ----------

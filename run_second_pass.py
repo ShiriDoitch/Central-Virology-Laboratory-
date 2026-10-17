@@ -8,6 +8,7 @@ import sys
 from pathlib import Path
 
 from src import extractor
+from src.privacy import safe_write_text
 from src.assemble import page_rows
 from src.evaluate import load_truth
 from src.extractor import DAILY_QUOTA_MSG
@@ -69,7 +70,7 @@ if __name__ == "__main__":
         res = process_page(PDF, p, force_second_pass=force, debug_dir=OUT)
         results.append(res)
         show(res, truth)
-        (OUT / f"p{p}.json").write_text(json.dumps(res, ensure_ascii=False, indent=1), encoding="utf-8")
+        safe_write_text(OUT / f"p{p}.json", json.dumps(res, ensure_ascii=False, indent=1))
         print(f"quota:     {extractor.TRACKER.report([*extractor.model_chain(), *extractor.region_model_chain()])}")
         if str(res["pass1"].get("error", "")).startswith(DAILY_QUOTA_MSG):
             print(f"!!! {res['pass1']['error']} (מעבר ראשון). עוצרים; אפשר להמשיך מחר.")

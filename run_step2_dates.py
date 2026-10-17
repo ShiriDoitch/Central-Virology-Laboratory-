@@ -12,6 +12,7 @@ from collections import Counter
 from pathlib import Path
 
 from src import extractor
+from src.privacy import is_production, safe_write_text
 from src.assemble import page_rows
 from src.evaluate import compare_page, load_barcodes, load_run, load_truth
 from src.pipeline import process_page, render_model_summary, sum_stats
@@ -117,6 +118,9 @@ def per_page_models() -> list[str]:
 
 
 def main(report_only: bool) -> None:
+    if is_production():       # הדוח נבנה מקובצי p<N>.json, ו-PRIVACY_MODE=production לא כותב אותם
+        print("PRIVACY_MODE=production: this measurement script needs the p<N>.json dumps; run it in dev mode.")
+        return
     OUT.mkdir(parents=True, exist_ok=True)
     before = json.loads((OUT / "before_v4b.json").read_text(encoding="utf-8"))
     tracker, stopped, stats = None, None, []
@@ -126,7 +130,7 @@ def main(report_only: bool) -> None:
         try:
             for p in PAGES:
                 res = process_page(PDF, p, debug_dir=OUT, retry_patient_labels=False)
-                (OUT / f"p{p}.json").write_text(json.dumps(res, ensure_ascii=False), encoding="utf-8")
+                safe_write_text(OUT / f"p{p}.json", json.dumps(res, ensure_ascii=False))
                 stats += [res["stats"]["pass1"], res["stats"]["pass2"]]
                 print(f"page {p:>2}: pass1_ok={res['pass1'].get('ok')} second_pass={res['second_pass']} "
                       f"pass2_model={res.get('pass2_model')} fallback={res.get('pass2_fallback')} "

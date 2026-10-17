@@ -8,6 +8,7 @@ from pathlib import Path
 
 from pydantic import BaseModel
 
+from .privacy import is_production
 from .extractor import provider, PROMPT, PROMPT_REGIONS, extract, extract_regions, model_chain, region_model_chain
 from .rules import legacy_date_kind
 from .schema import PageExtraction, RegionsExtraction
@@ -40,6 +41,8 @@ def regions_cache_key(crops: dict[str, bytes]) -> str:
 
 
 def _cached(key: str, fn, arg) -> tuple[dict, bool]:
+    if is_production():          # PRIVACY_MODE=production: אין מטמון בכלל. לא קוראים ולא כותבים קובץ; המודל נקרא ישירות
+        return fn(arg), False
     path = _dir() / f"{key}.json"
     if path.exists():
         return json.loads(path.read_text(encoding="utf-8")), True
@@ -69,7 +72,9 @@ def load_snapshot(path: Path = SNAPSHOT_PATH) -> dict[int, dict]:
 
 
 def store_result(key: str, result: dict) -> None:
-    """כותב תשובה מוצלחת למטמון, כולל דריסה של תשובה קיימת (למשל תוצאת ניסיון חוזר של המעבר הראשון)."""
+    """כותב תשובה מוצלחת למטמון, כולל דריסה של תשובה קיימת (למשל תוצאת ניסיון חוזר של המעבר הראשון). ב-production: לא כותב."""
+    if is_production():
+        return
     _dir().mkdir(parents=True, exist_ok=True)
     (_dir() / f"{key}.json").write_text(json.dumps(result, ensure_ascii=False), encoding="utf-8")
 
