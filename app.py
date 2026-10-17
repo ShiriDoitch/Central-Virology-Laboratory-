@@ -25,6 +25,8 @@ YELLOW_HEX = "#" + YELLOW.fgColor.rgb[-6:]            # ערך בכתב יד, ש
 # צבעי הביטחון בממשק (נקודה וצבע טקסט, לא מילוי תא). האקסל נשאר בצבעי src/export.py.
 UI_TONE = {GREEN_HEX: "#2E7D4F", ORANGE_HEX: "#96621F", YELLOW_HEX: "#8A7A2E", CONFIRMED_HEX: "#3F6FA0"}
 UI_DOT = {"green": "#2E7D4F", "orange": "#B8762E", "yellow": "#8A7A2E", "confirmed": "#3F6FA0"}
+WORKSPACE_H = 720                                    # גובה אזור העבודה (טבלה + פאנל פירוט), כך שהכול נכנס במסך בלי גלילת דף
+PAGE_COL = "עמוד"                                   # עמודת עמוד המקור בטבלה (לא שדה נתונים)
 CODE_KEYS = ("id", "center", "commitment")           # שדות שהם קודים מילוליים: מוצגים במונוספייס
 TITLES = dict(COLUMNS)
 NAME_KEYS = ("first_name", "last_name")
@@ -91,15 +93,31 @@ st.markdown(
     html, body, [data-testid="stAppViewContainer"], [data-testid="stSidebar"], .main, .block-container {direction: rtl; text-align: right;}
     html, body, .stApp, button, input, textarea, [data-testid="stMarkdownContainer"] {font-family: 'Heebo', sans-serif;}
     code {font-family: 'IBM Plex Mono', monospace !important; direction: ltr; unicode-bidi: embed; background: #F0EEE8; color: #1C2321; border-radius: 4px; padding: 1px 6px; font-size: 0.92em;}
-    h1 {font-size: 1.9rem !important; font-weight: 600 !important; letter-spacing: 0 !important;}
-    h5, h3 {font-weight: 600 !important;}
+    .block-container {max-width: 1520px; padding-top: 2.4rem; padding-bottom: 3rem;}
+    [data-testid="stVerticalBlock"] {gap: 0.9rem;}
+    /* כותרות וטקסט תמיד מיושרים לימין (RTL), גם כותרת הדף והכיתוב שמתחתיה */
+    [data-testid="stHeading"], [data-testid="stHeading"] *, h1, h2, h3, h4, h5, [data-testid="stCaptionContainer"], [data-testid="stCaptionContainer"] *,
+    [data-testid="stMarkdownContainer"], [data-testid="stMarkdownContainer"] p {direction: rtl; text-align: right;}
+    [data-testid="stHeading"] {width: 100%;}
+    h1 {font-size: 1.9rem !important; font-weight: 700 !important; letter-spacing: 0 !important; color: #1F4A54; padding: 0 0 0.35rem 0 !important; border-bottom: 3px solid #2D5F6B; display: block; width: 100%;}
+    /* כרטיס הפעולה העליון: בולט, נדבק לראש המסך בגלילה (שם נשארת גם הורדת האקסל) */
+    .st-key-action_card {position: sticky; top: 0.4rem; z-index: 100; background: #FFFFFF !important; border: 1px solid #C9D6D8 !important; border-top: 3px solid #2D5F6B !important; border-radius: 12px !important; padding: 0.4rem 0.8rem 0.6rem; box-shadow: 0 2px 10px rgba(31, 74, 84, 0.08);}
+    .st-key-action_card [data-testid="stFileUploaderDropzone"] {padding: 0.5rem 0.9rem;}
+    .st-key-action_card [data-testid="stFileUploader"] label p {font-size: 0.85rem; color: #4A5551;}
+    h5, h3 {font-weight: 600 !important; color: #1F4A54;}
+    h3 {font-size: 1.15rem !important;}
     [data-testid="stCaptionContainer"] {color: #5B6460;}
-    /* מדדי סיכום: שורת מספרים שקטה עם קו עליון, בלי כרטיסים */
-    [data-testid="stMetric"] {background: transparent; border: 0; border-top: 2px solid #D9D6CC; border-radius: 0; padding: 8px 2px 4px; direction: rtl;}
-    [data-testid="stMetricLabel"] p {font-size: 0.82rem; color: #5B6460;}
-    [data-testid="stMetricValue"] {font-size: 1.6rem; font-weight: 600;}
+    /* מדדי סיכום: כרטיסים רכים עם מסגרת, תוויות שנשברות לשתי שורות (בלי "...") ויישור לימין */
+    [data-testid="stMetric"] {background: #FFFFFF; border: 1px solid #D9D6CC; border-radius: 10px; padding: 14px 16px; direction: rtl; text-align: right; min-height: 104px;}
+    [data-testid="stMetricLabel"], [data-testid="stMetricLabel"] > div {width: 100%; justify-content: flex-start; overflow: visible !important;}
+    [data-testid="stMetricLabel"] p {font-size: 0.85rem; color: #4A5551; white-space: normal !important; overflow: visible !important; text-overflow: clip !important; line-height: 1.3;}
+    [data-testid="stMetricValue"] {font-size: 1.75rem; font-weight: 600; color: #1C2321;}
+    [data-testid="stMetricValue"] > div {white-space: normal !important; overflow: visible !important; text-overflow: clip !important;}
+    /* פאנל הפירוט: כרטיס עם מסגרת רכה, הצעות ככפתורי "צ'יפ" */
+    [data-testid="stVerticalBlockBorderWrapper"] {border-radius: 10px; border-color: #D9D6CC; background: #FFFFFF;}
+    .stButton > button[kind="secondary"] {min-height: 2.3rem;}
     /* מקרא: נקודה + טקסט, בלי רקע צבעוני */
-    .legend {display: flex; flex-wrap: wrap; gap: 6px 22px; margin: 10px 0 18px; font-size: 0.88rem; color: #2F3836;}
+    .legend {display: flex; flex-wrap: wrap; gap: 4px 16px; margin: 2px 0 34px; font-size: 0.82rem; color: #2F3836;}
     .legend span {display: inline-flex; align-items: center; gap: 7px;}
     .dot {display: inline-block; width: 9px; height: 9px; border-radius: 50%; flex: none;}
     .dot.empty {border: 1.5px solid #9A9A92; background: transparent;}
@@ -154,13 +172,15 @@ def table_data(pages: list[dict], overrides: dict | None = None):
             colors.append({TITLES[k]: (CONFIRMED_HEX if er.cells[k].confirmed else YELLOW_HEX if er.cells[k].yellow else
                                        ORANGE_HEX if er.cells[k].orange else (GREEN_HEX if er.cells[k].value else ""))
                            for k in FIELD_KEYS})
-    cols = [TITLES[k] for k in reversed(FIELD_KEYS)]
+    for (p, _er), rec, col in zip(export_rows, records, colors):
+        rec[PAGE_COL], col[PAGE_COL] = p["page"], ""         # עמוד המקור של השורה: עמודה ללא צבע סטטוס
+    cols = [TITLES[k] for k in reversed(FIELD_KEYS)] + [PAGE_COL]      # הגריד מצויר LTR: העמודה האחרונה ברשימה היא הימנית ביותר
     return pd.DataFrame(records, columns=cols), pd.DataFrame(colors, columns=cols), export_rows
 
 
 def style(df: pd.DataFrame, colors: pd.DataFrame):
     """נקודה "●" לפני הערך וצבע טקסט לפי הסטטוס, בלי מילוי תא. תא ריק שסומן מציג "● —"; תא ריק בלי דגל נשאר ריק."""
-    shown = df.where(colors == "", "● " + df.astype(str).replace("", "—"))
+    shown = df.astype(str).where(colors == "", "● " + df.astype(str).replace("", "—"))
     return shown.style.apply(lambda _: colors.map(lambda c: f"color: {UI_TONE[c]}" if c in UI_TONE else ""), axis=None)
 
 
@@ -280,10 +300,10 @@ def render_confirmation(page_res: dict, er, key: str) -> None:
     st.text_input("או הקלדה ידנית" + (f" ({INPUT_HINTS[key]})" if key in INPUT_HINTS else ""), key=txt_key)
     if st.session_state.get(f"err_{page}_{okey}"):
         st.error("הערך לא תקין לשדה הזה, לא נשמר" + (f" ({INPUT_HINTS[key]})" if key in INPUT_HINTS else ""))
-    c1, c2 = st.columns(2)
-    c1.button("אשרי את הערך שהוקלד", key=f"ok_{page}_{okey}", on_click=_confirm_typed, args=(page, okey), type="primary")
-    if cell.confirmed:
-        c2.button("בטלי אישור", key=f"clr_{page}_{okey}", on_click=_clear, args=(page, okey))
+    ok_slot, clear_slot = st.columns([3, 2]) if cell.confirmed else (st.container(), None)
+    ok_slot.button("אשרי את הערך שהוקלד", key=f"ok_{page}_{okey}", on_click=_confirm_typed, args=(page, okey), type="primary", width="stretch")
+    if clear_slot is not None:                           # פעולה משנית: כפתור שקט לצד הכפתור הראשי
+        clear_slot.button("בטלי אישור", key=f"clr_{page}_{okey}", on_click=_clear, args=(page, okey), width="stretch")
 
 
 def render_detail(page_res: dict, er, key: str, image: bytes | None) -> None:
@@ -317,17 +337,16 @@ def render_detail(page_res: dict, er, key: str, image: bytes | None) -> None:
 # ---------- דף ----------
 
 st.title("חילוץ טפסי התחייבות")
-st.caption("המעבדה הווירולוגית המרכזית · שורה אחת לכל התחייבות · שדה כתום = לא בטוח, לבדיקה אנושית")
+st.caption("המעבדה המרכזית לנגיפים · שורה אחת לכל התחייבות · שדה כתום = לא בטוח, לבדיקה אנושית")
 
-left, right = st.columns([3, 2])
-with left:
-    upload = st.file_uploader("העלאת טופס (PDF או תמונה)", type=["pdf", "png", "jpg", "jpeg"])
-with right:
-    st.write("")
-    st.write("")
-    c1, c2 = st.columns(2)
-    run_clicked = c1.button("עבד", type="primary", disabled=upload is None, width="stretch")
-    sample_clicked = c2.button("טען דוגמה מחלק 1", width="stretch")
+with st.container(border=True, key="action_card"):         # כרטיס פעולה אחד: העלאה, עיבוד, דוגמה והורדת אקסל (נדבק לראש המסך בגלילה)
+    up_col, run_col, sample_col, dl_col = st.columns([4, 1.3, 1.5, 1.5], vertical_alignment="bottom")
+    with up_col:
+        upload = st.file_uploader("העלאת טופס (PDF או תמונה)", type=["pdf", "png", "jpg", "jpeg"])
+    run_clicked = run_col.button("עבד", type="primary", disabled=upload is None, width="stretch")
+    sample_clicked = sample_col.button("טען דוגמה מחלק 1", width="stretch")
+    download_slot = dl_col.empty()
+    download_slot.button("הורד אקסל", disabled=True, width="stretch", key="dl_disabled", help="זמין אחרי שיש תוצאות")
 
 progress_slot = st.empty()
 if sample_clicked:
@@ -391,55 +410,56 @@ if issues["quota"]:
                + ". יש רק קריאה אחת של העמוד בשדות האלה.")
 if issues["failed"]:
     st.warning("מעבר 2 נכשל בעמודים: " + ", ".join(map(str, issues["failed"])) + ".")
-st.dataframe(per_field_counts(export_rows), hide_index=True, width="stretch")
-st.markdown(
-    f"<div class='legend'><span><i class='dot' style='background:{UI_DOT['green']}'></i>ירוק: ערך בלי דגל</span>"
-    f"<span><i class='dot' style='background:{UI_DOT['orange']}'></i>כתום: לבדיקה</span>"
-    f"<span><i class='dot' style='background:{UI_DOT['yellow']}'></i>זהב (ת\"ז או שם): {YELLOW_TEXT}</span>"
-    f"<span><i class='dot' style='background:{UI_DOT['confirmed']}'></i>כחול: ערך שאושר על ידי המשתמש</span>"
-    f"<span><i class='dot empty'></i>ריק: לא נמצא</span></div>",
-    unsafe_allow_html=True,
-)
+wb, _summary = build_workbook(pages, overrides)
+buf = io.BytesIO()
+wb.save(buf)
+download_slot.download_button("הורד אקסל", buf.getvalue(), file_name="commitments.xlsx", key="dl_xlsx", width="stretch",
+                              mime="application/vnd.openxmlformats-officedocument.spreadsheetml.sheet", type="primary")
 
-table_col, detail_col = st.columns([3, 2])
+table_col, detail_col = st.columns([3, 2], gap="medium")
 selected = None
 with table_col:
     st.markdown("##### תוצאות (לחצי על תא כדי לראות ראיות)")
+    st.markdown(
+    f"<div class='legend'><span><i class='dot' style='background:{UI_DOT['green']}'></i>ירוק: בלי דגל</span>"
+    f"<span><i class='dot' style='background:{UI_DOT['orange']}'></i>כתום: לבדיקה</span>"
+    f"<span title='{YELLOW_TEXT}'><i class='dot' style='background:{UI_DOT['yellow']}'></i>זהב: שתי קריאות מסכימות (ת\"ז, שם)</span>"
+    f"<span><i class='dot' style='background:{UI_DOT['confirmed']}'></i>כחול: אושר על ידי המשתמש</span>"
+    f"<span><i class='dot empty'></i>ריק: לא נמצא</span></div>",
+    unsafe_allow_html=True,
+    )
     try:
-        event = st.dataframe(style(df, colors), width="stretch", hide_index=False, on_select="rerun",
-                             selection_mode="single-cell", key="grid")
+        event = st.dataframe(style(df, colors), width="stretch", hide_index=True, on_select="rerun",
+                             selection_mode="single-cell", key="grid", height=min(WORKSPACE_H - 70, 38 + 35 * len(df)))
         cells = event.selection.cells
-        if cells:
+        if cells and (cells[0][1] if isinstance(cells[0][1], str) else df.columns[int(cells[0][1])]) != PAGE_COL:
             row, col = cells[0]
             selected = (int(row), col if isinstance(col, str) else df.columns[int(col)])
             st.session_state["selected_cell"] = selected
-        else:
+        else:                                           # בלי בחירה, או לחיצה על עמודת העמוד: נשארת הבחירה הקודמת
             selected = st.session_state.get("selected_cell")
             if selected and selected[0] >= len(df):
                 selected = None
     except Exception:                                   # גרסת Streamlit בלי בחירת תא: בחירה ידנית
         r_i = st.selectbox("שורה", range(len(df)), format_func=lambda i: f"שורה {i + 1} · עמוד {export_rows[i][1].page}")
-        c_i = st.selectbox("שדה", list(df.columns))
+        c_i = st.selectbox("שדה", [c for c in df.columns if c != PAGE_COL])
         selected = (r_i, c_i)
 
 with detail_col:
-    if selected:
-        row_i, col_name = selected
-        key = next(k for k, t in COLUMNS if t == col_name)
-        page_res, er = export_rows[row_i]
-        render_detail(page_res, er, key, images.get(er.page))
+    with st.container(border=True, height=WORKSPACE_H):       # הפאנל נגלל בתוך עצמו: אין צורך לגלול את הדף כדי להגיע לחיתוך ולכפתורי האישור
+        if selected:
+            row_i, col_name = selected
+            key = next(k for k, t in COLUMNS if t == col_name)
+            page_res, er = export_rows[row_i]
+            render_detail(page_res, er, key, images.get(er.page))
+        else:
+            st.info("לחצי על תא בטבלה: יוצגו העמוד הסרוק, הדגלים והחלופות.")
+
+with st.expander("פירוט לפי שדה"):
+    st.dataframe(per_field_counts(export_rows), hide_index=True, width="stretch")
+with st.expander(f"עמודים שדולגו ({len(skipped)})"):
+    if skipped:
+        for page, reason in skipped:
+            st.write(f"עמוד {page}: {reason}")
     else:
-        st.info("לחצי על תא בטבלה: יוצגו העמוד הסרוק, הדגלים והחלופות.")
-
-st.markdown("##### עמודים שדולגו")
-if skipped:
-    for page, reason in skipped:
-        st.write(f"עמוד {page}: {reason}")
-else:
-    st.caption("אין עמודים שדולגו.")
-
-wb, _summary = build_workbook(pages, overrides)
-buf = io.BytesIO()
-wb.save(buf)
-st.download_button("הורד אקסל", buf.getvalue(), file_name="commitments.xlsx",
-                   mime="application/vnd.openxmlformats-officedocument.spreadsheetml.sheet", type="primary")
+        st.caption("אין עמודים שדולגו.")
