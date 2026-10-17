@@ -1,7 +1,7 @@
 """אישור ערכים על ידי המשתמש (כל שבעת השדות): חיתוך האזור הרלוונטי מהעמוד הנקי, והצעות לשדה (אותן אלטרנטיבות שהמערכת שמרה).
 המסך (app.py) רק מציג; ההחלטה מה הערך הסופי נשמרת ב-overrides ונכנסת לאקסל דרך export.build_rows."""
 import base64
-
+import html
 import re
 
 from .crop import choose_box, region_fractions
@@ -9,6 +9,24 @@ from .export import COMMITMENT_ROW_KEY, FIELD_KEYS, NAME_KEYS, Cell
 from .intake import render_region
 from .rules import normalize_date
 from .schema import Box
+
+_MD_SPECIAL = re.compile(r"([\\`*_\[\]()<>!|~&$#{}])")
+
+
+def md_text(value) -> str:
+    """טקסט שמקורו בטופס (קריאת מודל), בטוח להצגה בתוך st.markdown: תווי Markdown ו-HTML מקבלים backslash, כך שאין תגית, קישור או תמונה."""
+    return _MD_SPECIAL.sub(lambda m: "\\" + m.group(1), str(value))
+
+
+def md_code(value) -> str:
+    """קוד מילולי (ת"ז, מרכזי, התחייבות) בגופן מונוספייס; backtick בערך מוחלף כדי שלא יסגור את הטווח."""
+    return "`" + str(value).replace("`", "'").replace("\n", " ") + "`"
+
+
+def flag_chips_html(labels) -> str:
+    """תוויות דגל לתוך st.markdown(unsafe_allow_html=True). התווית עוברת html.escape: תווית שמקורה בטופס לא תהפוך לתגית."""
+    return " ".join(f"<span class='flag'>{html.escape(str(label))}</span>" for label in labels)
+
 
 NAME_CROP_SCALE = 3.0     # רזולוציה גבוהה: הקורא האנושי מגדיל את התמונה
 

@@ -6,3 +6,20 @@ gatherUsageStats = false
 
 [server]
 headless = true
+
+# עיצוב: ניטרלי חם, טורקיז קליני לאלמנטים אינטראקטיביים בלבד (primaryColor). צבעי הביטחון לא נגזרים ממנו.
+[theme]
+base = "light"
+backgroundColor = "#FAFAF8"
+secondaryBackgroundColor = "#F0EEE8"
+textColor = "#1C2321"
+primaryColor = "#2D5F6B"
+font = "Heebo"
+codeFont = "IBM Plex Mono"
+borderColor = "#D9D6CC"
+baseRadius = "6px"
+greenColor = "#2E7D4F"
+orangeColor = "#B8762E"
+yellowColor = "#B8762E"
+redColor = "#B23A3A"
+blueColor = "#4F6D7A"

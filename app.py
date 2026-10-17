@@ -8,7 +8,7 @@ from pathlib import Path
 import pandas as pd
 import streamlit as st
 
-from src.confirm import FIELD_REGION, field_crop, name_suggestions, override_key, set_override, zoom_html
+from src.confirm import FIELD_REGION, field_crop, flag_chips_html, md_code, md_text, name_suggestions, override_key, set_override, zoom_html
 from src.export import COLUMNS, CONFIRMED, FIELD_KEYS, GREEN, ORANGE, YELLOW, _readings, build_rows, build_workbook, pass2_issues, skip_reason
 from src.intake import pdf_to_images, rotate_jpeg
 from src.schema import PageExtraction
@@ -21,6 +21,10 @@ MAX_UPLOAD_MB = 25
 GREEN_HEX, ORANGE_HEX = "#" + GREEN.fgColor.rgb[-6:], "#" + ORANGE.fgColor.rgb[-6:]
 CONFIRMED_HEX = "#" + CONFIRMED.fgColor.rgb[-6:]      # שם שאושר על ידי המשתמש
 YELLOW_HEX = "#" + YELLOW.fgColor.rgb[-6:]            # ערך בכתב יד, שתי קריאות מסכימות: מבט לאישור
+# צבעי הביטחון בממשק (נקודה וצבע טקסט, לא מילוי תא). האקסל נשאר בצבעי src/export.py.
+UI_TONE = {GREEN_HEX: "#2E7D4F", ORANGE_HEX: "#96621F", YELLOW_HEX: "#8A7A2E", CONFIRMED_HEX: "#3F6FA0"}
+UI_DOT = {"green": "#2E7D4F", "orange": "#B8762E", "yellow": "#8A7A2E", "confirmed": "#3F6FA0"}
+CODE_KEYS = ("id", "center", "commitment")           # שדות שהם קודים מילוליים: מוצגים במונוספייס
 TITLES = dict(COLUMNS)
 NAME_KEYS = ("first_name", "last_name")
 NOT_READ_TEXT = "לא נקרא, יש להקליד"
@@ -77,21 +81,45 @@ def _startup_cleanup() -> int:
     return cleanup_stale_uploads()
 
 
-st.set_page_config(page_title="חילוץ טפסי התחייבות", page_icon="📄", layout="wide")
+st.set_page_config(page_title="חילוץ טפסי התחייבות", layout="wide")
 _startup_cleanup()
 st.markdown(
     """<style>
+    @import url('https://fonts.googleapis.com/css2?family=Heebo:wght@400;500;600;700&family=IBM+Plex+Mono:wght@400;500&display=swap');
+    /* כיוון וגופן: עברית מימין לשמאל, Heebo לכל הטקסט; מונוספייס רק לקודים (ת"ז, מרכזי, התחייבות, ברקוד) */
     html, body, [data-testid="stAppViewContainer"], [data-testid="stSidebar"], .main, .block-container {direction: rtl; text-align: right;}
-    [data-testid="stMetric"] {background: #f6f7f9; border-radius: 10px; padding: 12px 16px; direction: rtl;}
-    .legend span {display:inline-block; padding:2px 10px; border-radius:6px; margin-left:8px; color:#222;}
-    .flag {display:inline-block; background:#FFB366; border-radius:6px; padding:1px 8px; margin:2px; color:#222;}
+    html, body, .stApp, button, input, textarea, [data-testid="stMarkdownContainer"] {font-family: 'Heebo', sans-serif;}
+    code {font-family: 'IBM Plex Mono', monospace !important; direction: ltr; unicode-bidi: embed; background: #F0EEE8; color: #1C2321; border-radius: 4px; padding: 1px 6px; font-size: 0.92em;}
+    h1 {font-size: 1.9rem !important; font-weight: 600 !important; letter-spacing: 0 !important;}
+    h5, h3 {font-weight: 600 !important;}
+    [data-testid="stCaptionContainer"] {color: #5B6460;}
+    /* מדדי סיכום: שורת מספרים שקטה עם קו עליון, בלי כרטיסים */
+    [data-testid="stMetric"] {background: transparent; border: 0; border-top: 2px solid #D9D6CC; border-radius: 0; padding: 8px 2px 4px; direction: rtl;}
+    [data-testid="stMetricLabel"] p {font-size: 0.82rem; color: #5B6460;}
+    [data-testid="stMetricValue"] {font-size: 1.6rem; font-weight: 600;}
+    /* מקרא: נקודה + טקסט, בלי רקע צבעוני */
+    .legend {display: flex; flex-wrap: wrap; gap: 6px 22px; margin: 10px 0 18px; font-size: 0.88rem; color: #2F3836;}
+    .legend span {display: inline-flex; align-items: center; gap: 7px;}
+    .dot {display: inline-block; width: 9px; height: 9px; border-radius: 50%; flex: none;}
+    .dot.empty {border: 1.5px solid #9A9A92; background: transparent;}
+    /* דגלים בפירוט: טקסט עם נקודת ענבר, בלי תווית צבועה */
+    .flag {display: inline-flex; align-items: center; gap: 6px; margin: 2px 0 2px 14px; color: #96621F; font-size: 0.92rem;}
+    .flag::before {content: ""; width: 8px; height: 8px; border-radius: 50%; background: #B8762E; flex: none;}
+    /* כפתורים והעלאה בצבעי הנושא (טורקיז), לא ברירת המחדל של Streamlit */
+    .stButton > button, .stDownloadButton > button {border-radius: 6px; font-weight: 500; border: 1px solid #CFCBBF; background: #FAFAF8;}
+    .stButton > button:hover {border-color: #2D5F6B; color: #2D5F6B;}
+    .stButton > button[kind="primary"], .stDownloadButton > button[kind="primary"] {background: #2D5F6B; border-color: #2D5F6B; color: #fff;}
+    .stButton > button[kind="primary"]:hover, .stDownloadButton > button[kind="primary"]:hover {background: #244D58; border-color: #244D58; color: #fff;}
+    [data-testid="stFileUploaderDropzone"] {background: #F0EEE8; border: 1px dashed #B9B5A8; border-radius: 6px;}
+    [data-testid="stAlert"] {border-radius: 6px; border: 1px solid #D9D6CC;}
+    [data-testid="stExpander"], [data-testid="stDataFrame"] {border: 1px solid #D9D6CC; border-radius: 6px;}
     /* בלי כפתור Deploy ובלי תפריט */
     [data-testid="stToolbar"], [data-testid="stDeployButton"], .stDeployButton, #MainMenu, footer {display:none !important;}
     /* העלאת קובץ בעברית */
     [data-testid="stFileUploaderDropzoneInstructions"] > div > span, [data-testid="stFileUploaderDropzoneInstructions"] small {display:none;}
     [data-testid="stFileUploaderDropzoneInstructions"] > div::before {content: "גררי לכאן קובץ PDF או תמונה (עד 25MB)"; font-size: 15px;}
-    [data-testid="stFileUploaderDropzone"] button {font-size: 0 !important;}
-    [data-testid="stFileUploaderDropzone"] button::after {content: "בחירת קובץ"; font-size: 14px;}
+    [data-testid="stFileUploaderDropzone"] button, [data-testid="stFileUploaderDropzone"] button * {font-size: 0 !important;}
+    [data-testid="stFileUploaderDropzone"] button::after {content: "בחירת קובץ"; font-size: 14px !important;}
     </style>""",
     unsafe_allow_html=True,
 )
@@ -130,7 +158,9 @@ def table_data(pages: list[dict], overrides: dict | None = None):
 
 
 def style(df: pd.DataFrame, colors: pd.DataFrame):
-    return df.style.apply(lambda _: colors.map(lambda c: f"background-color: {c}; color: #222" if c else ""), axis=None)
+    """נקודה "●" לפני הערך וצבע טקסט לפי הסטטוס, בלי מילוי תא. תא ריק שסומן מציג "● —"; תא ריק בלי דגל נשאר ריק."""
+    shown = df.where(colors == "", "● " + df.astype(str).replace("", "—"))
+    return shown.style.apply(lambda _: colors.map(lambda c: f"color: {UI_TONE[c]}" if c in UI_TONE else ""), axis=None)
 
 
 def per_field_counts(export_rows) -> pd.DataFrame:
@@ -226,20 +256,20 @@ def render_confirmation(page_res: dict, er, key: str) -> None:
     else:
         st.caption("אין חיתוך זמין לשדה הזה; העמוד המלא מוצג.")
     if cell.confirmed:
-        st.success(f"אושר על ידי המשתמש: {cell.value}")
+        st.success(f"אושר על ידי המשתמש: {md_text(cell.value)}")
     elif cell.yellow:
         st.info(YELLOW_TEXT)
     elif cell.orange:
-        st.warning("לא בטוח (כתום): " + (", ".join(he_flag(f, key) for f in cell.flags) or "—"))
+        st.warning("לא בטוח (כתום): " + (", ".join(md_text(he_flag(f, key)) for f in cell.flags) or "—"))
     elif cell.value:
-        st.info(f"ערך של המערכת: {cell.value}")
+        st.info(f"ערך של המערכת: {md_text(cell.value)}")
     suggestions = name_suggestions(cell, key)
     if suggestions:
         st.markdown("**הצעות (לחצי כדי לאשר):**")
         if key == "id" and "id_checksum_failed" in cell.flags and not cell.confirmed:
             st.caption("אחרי הערך שנקרא: החלפת ספרה אחת בזוגות מבולבלים שעוברת את ספרת הביקורת. אין תיקון אוטומטי.")
         for i, sug in enumerate(suggestions):
-            st.button(sug, key=f"sg_{page}_{okey}_{i}", on_click=_choose, args=(page, okey, sug))
+            st.button(md_text(sug), key=f"sg_{page}_{okey}_{i}", on_click=_choose, args=(page, okey, sug))
     elif key in NAME_KEYS:
         st.warning(NOT_READ_TEXT)
     else:
@@ -266,14 +296,15 @@ def render_detail(page_res: dict, er, key: str, image: bytes | None) -> None:
         if image:
             st.image(image, caption=f"עמוד {er.page}", width="stretch")
         render_confirmation(page_res, er, key)
-    st.markdown(f"**ערך:** {cell.value or '—'}" + (f"  \n**נקרא (raw):** {cell.raw}" if not cell.value and cell.raw else ""))
+    code = md_code if key in CODE_KEYS else md_text       # קודים במונוספייס; שמות ופרוזה לא. כל טקסט מהטופס עובר escape
+    st.markdown(f"**ערך:** {code(cell.value) if cell.value else '—'}" + (f"  \n**נקרא (raw):** {code(cell.raw)}" if not cell.value and cell.raw else ""))
     if cell.flags:
-        st.markdown("**לבדיקה:** " + " ".join(f"<span class='flag'>{he_flag(f, key)}</span>" for f in cell.flags), unsafe_allow_html=True)
+        st.markdown("**לבדיקה:** " + flag_chips_html(he_flag(f, key) for f in cell.flags), unsafe_allow_html=True)
     else:
         st.markdown("**לבדיקה:** אין")
     if cell.alternatives and key not in NAME_KEYS:
         label = "מועמדים שנמצאו (התא ריק)" if not cell.value else "חלופות"
-        st.markdown(f"**{label}:** " + " | ".join(cell.alternatives))
+        st.markdown(f"**{label}:** " + " | ".join(md_text(a) for a in cell.alternatives))
     if cell.hints:
         st.caption("רמזים: " + ", ".join(cell.hints))
     r1 = PageExtraction.model_validate(page_res["pass1"])
@@ -357,11 +388,11 @@ if issues["failed"]:
     st.warning("מעבר 2 נכשל בעמודים: " + ", ".join(map(str, issues["failed"])) + ".")
 st.dataframe(per_field_counts(export_rows), hide_index=True, width="stretch")
 st.markdown(
-    f"<div class='legend'><span style='background:{GREEN_HEX}'>ירוק: ערך בלי דגל</span>"
-    f"<span style='background:{ORANGE_HEX}'>כתום: לבדיקה</span>"
-    f"<span style='background:{YELLOW_HEX}'>צהוב (ת\"ז או שם): {YELLOW_TEXT}</span>"
-    f"<span style='background:{CONFIRMED_HEX}'>כחול: ערך שאושר על ידי המשתמש</span>"
-    f"<span style='background:#fff;border:1px solid #ccc'>לבן: לא נמצא</span></div>",
+    f"<div class='legend'><span><i class='dot' style='background:{UI_DOT['green']}'></i>ירוק: ערך בלי דגל</span>"
+    f"<span><i class='dot' style='background:{UI_DOT['orange']}'></i>כתום: לבדיקה</span>"
+    f"<span><i class='dot' style='background:{UI_DOT['yellow']}'></i>זהב (ת\"ז או שם): {YELLOW_TEXT}</span>"
+    f"<span><i class='dot' style='background:{UI_DOT['confirmed']}'></i>כחול: ערך שאושר על ידי המשתמש</span>"
+    f"<span><i class='dot empty'></i>ריק: לא נמצא</span></div>",
     unsafe_allow_html=True,
 )
 
