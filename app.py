@@ -405,6 +405,12 @@ issues = pass2_issues(pages)
 if issues["fallback"]:
     st.warning("מעבר 2 נקרא במודל הגיבוי החלש (המודל החזק לא זמין או נכשל) בעמודים: "
                + ", ".join(map(str, issues["fallback"])) + ". הקריאות בעמודים האלה פחות אמינות, מומלץ לבדוק ידנית.")
+if issues["claude"]:
+    st.warning("מעבר 2 נקרא ב-Claude (גיבוי אחרון: כל מפתחות Gemini נכשלו) בעמודים: "
+               + ", ".join(map(str, issues["claude"])) + ". מומלץ לבדוק ידנית.")
+if issues["claude_pass1"]:
+    st.warning("הקריאה הראשונה נעשתה ב-Claude (גיבוי אחרון, Gemini לא זמין) בעמודים: "
+               + ", ".join(map(str, issues["claude_pass1"])) + ".")
 if issues["quota"]:
     st.warning("מעבר 2 דולג בגלל מכסה יומית שנגמרה בעמודים: " + ", ".join(map(str, issues["quota"]))
                + ". יש רק קריאה אחת של העמוד בשדות האלה.")

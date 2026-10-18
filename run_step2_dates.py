@@ -50,6 +50,14 @@ class BudgetTracker:
         self.inner.before_call(model)         # מכסה יומית ומרווח בין קריאות, כרגיל
         self.count[model] += 1                # נספר רק אם הבקשה באמת נשלחת
 
+    def budget_only(self, model: str) -> None:
+        """מפתחות נוספים (extractor._ExtraKeyTracker): אותה תקרה ואותו מונה, בלי המכסה היומית של המפתח הראשון."""
+        if model not in self.limits:
+            raise DailyQuotaExhausted(model, "not_in_budget")
+        if self.count[model] >= self.limits[model]:
+            raise BudgetReached(f"{model}: {self.count[model]}/{self.limits[model]}")
+        self.count[model] += 1
+
     def mark_unavailable(self, model: str) -> None:
         """נקרא מ-extractor ברגע ש-404 התקבל, לפני הנפילה לגיבוי: עוצרים את הריצה מיד אם זה המודל החזק."""
         self.inner.mark_unavailable(model)

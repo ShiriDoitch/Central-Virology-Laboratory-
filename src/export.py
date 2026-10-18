@@ -214,16 +214,21 @@ def _pass2_status(page_result: dict) -> str:
         return "לא רץ"
     if not r2.get("ok"):
         return "נכשל"
-    return "רץ בגיבוי (מודל חלש)" if page_result.get("pass2_fallback") else "רץ"
+    if page_result.get("pass2_fallback"):
+        return "רץ ב-Claude (גיבוי אחרון)" if r2.get("provider") == "anthropic" else "רץ בגיבוי (מודל חלש)"
+    return "רץ"
 
 
 def pass2_issues(pages: list[dict]) -> dict[str, list[int]]:
-    """עמודים שהמעבר השני בהם לא רץ במודל המועדף: fallback = ענה מודל הגיבוי (החלש), quota = דולג כי נגמרה המכסה היומית
-    (אף מודל לא ענה), failed = נכשל מסיבה אחרת. לאזהרה בולטת במסך התוצאות."""
-    out: dict[str, list[int]] = {"fallback": [], "quota": [], "failed": []}
+    """עמודים שהמעבר השני בהם לא רץ במודל המועדף: fallback = ענה מודל הגיבוי החלש של Gemini, claude = ענה Claude (גיבוי אחרון
+    אחרי שכל מפתחות Gemini נכשלו), quota = דולג כי נגמרה המכסה היומית (אף מודל לא ענה), failed = נכשל מסיבה אחרת.
+    claude_pass1 = עמודים שהמעבר הראשון שלהם נקרא ב-Claude. לאזהרה בולטת במסך התוצאות."""
+    out: dict[str, list[int]] = {"fallback": [], "claude": [], "claude_pass1": [], "quota": [], "failed": []}
     for p in sorted(pages, key=lambda x: x["page"]):
+        if (p.get("pass1") or {}).get("provider") == "anthropic":
+            out["claude_pass1"].append(p["page"])
         if p.get("pass2_fallback"):
-            out["fallback"].append(p["page"])
+            out["claude" if (p.get("pass2") or {}).get("provider") == "anthropic" else "fallback"].append(p["page"])
         elif p.get("second_pass") == "daily_quota_exhausted":
             out["quota"].append(p["page"])
         elif p.get("second_pass") == "failed":

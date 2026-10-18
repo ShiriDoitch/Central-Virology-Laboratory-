@@ -395,7 +395,7 @@ def test_pass2_issues_lists_fallback_quota_and_failed_pages():
              {"page": 3, "second_pass": "daily_quota_exhausted"},
              {"page": 4, "second_pass": "failed"},
              {"page": 5, "second_pass": "skipped"}]
-    assert pass2_issues(pages) == {"fallback": [2], "quota": [3], "failed": [4]}
+    assert pass2_issues(pages) == {"fallback": [2], "claude": [], "claude_pass1": [], "quota": [3], "failed": [4]}
 
 
 def test_app_shows_pass2_warning_and_receipt_crop_for_date():

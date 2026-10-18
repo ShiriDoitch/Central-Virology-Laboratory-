@@ -26,6 +26,16 @@ def dev_privacy_mode(monkeypatch):
 
 
 @pytest.fixture(autouse=True)
+def no_real_api_fallbacks(monkeypatch):
+    """בבדיקות אסור שיישלחו בקשות אמיתיות: בלי גיבוי Claude (גם אם ANTHROPIC_API_KEY ב-.env של המפתחת) ובלי רשימת מפתחות Gemini
+    מהסביבה. בדיקות של הגיבוי ושל סיבוב המפתחות מגדירות אותם בעצמן ומחליפות את הלקוחות בלקוחות מדומים."""
+    monkeypatch.setenv("CLAUDE_FALLBACK", "0")
+    monkeypatch.delenv("GEMINI_API_KEYS", raising=False)
+    monkeypatch.setattr("src.extractor._EXTRA_TRACKERS", {})
+    monkeypatch.setattr("src.extractor.REGION_ATTEMPTS", 1)      # בדיקות שרשרת המודלים של מעבר 2 קובעות סדר מודלים, לא ניסיונות חוזרים; tests/test_resilience.py בודק את ברירת המחדל (2)
+
+
+@pytest.fixture(autouse=True)
 def quota_tracker(monkeypatch, tmp_path):
     clock = FakeClock()
     tracker = QuotaTracker(path=tmp_path / "quota_state.json", config=DEFAULT_CONFIG,
@@ -33,6 +43,9 @@ def quota_tracker(monkeypatch, tmp_path):
                            today=lambda: "2026-10-14")
     tracker.clock = clock
     monkeypatch.setattr(extractor, "TRACKER", tracker)
+    monkeypatch.setattr(extractor, "_make_extra_tracker", lambda i: extractor._ExtraKeyTracker(QuotaTracker(
+        path=tmp_path / f"quota_state_key{i + 1}.json", config=DEFAULT_CONFIG, strong_models=lambda: (),
+        now=clock.now, sleep=clock.sleep, today=lambda: "2026-10-14")))      # מפתחות נוספים: אותו שעון מדומה, בלי כתיבה ל-data/
     return tracker
 
 

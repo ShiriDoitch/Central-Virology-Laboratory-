@@ -191,17 +191,63 @@ def _jitter(base: float) -> float:
 
 TRACKER = QuotaTracker(strong_models=strong_model_list)   # מכסות ומרווחים; בבדיקות מוחלף ב-conftest
 DAILY_QUOTA_MSG = "מכסה יומית נגמרה"
+REGION_ATTEMPTS = 2          # מעבר שני: ניסיון + ניסיון חוזר אחד (אחרי ~3 שניות) על 503/504/timeout, לפני מפתח/מודל הבא
+
+
+def gemini_api_keys() -> list[str]:
+    """מפתחות Gemini לפי סדר ההעדפה: GEMINI_API_KEYS (רשימה מופרדת בפסיקים), ואם אין, GEMINI_API_KEY הבודד.
+    בלי כפילויות; ריק אם אין אף מפתח. המפתחות עצמם לא נכתבים לשום פלט (רק האינדקס, מ-0)."""
+    raw = [k.strip() for k in (os.getenv("GEMINI_API_KEYS") or "").split(",")]
+    keys = [k for k in dict.fromkeys(raw) if k]
+    single = (os.getenv("GEMINI_API_KEY") or "").strip()
+    return keys or ([single] if single else [])
+
+
+class _ExtraKeyTracker:
+    """מעקב מכסות של מפתח נוסף (אינדקס 1 ומעלה): קובץ מצב נפרד, כי המכסה היומית היא לכל מפתח/פרויקט. תקרת הקריאות של סקריפט
+    מדידה (BudgetTracker על TRACKER, אם יש לו budget_only) חלה גם על המפתחות הנוספים."""
+
+    def __init__(self, inner):
+        self.inner = inner
+
+    def before_call(self, model: str) -> None:
+        self.inner.before_call(model)
+        budget = getattr(TRACKER, "budget_only", None)
+        if budget:
+            budget(model)
+
+    def __getattr__(self, name):
+        return getattr(self.inner, name)
+
+
+_EXTRA_TRACKERS: dict[int, "_ExtraKeyTracker"] = {}
+
+
+def _make_extra_tracker(index: int):
+    return _ExtraKeyTracker(QuotaTracker(path=Path(f"data/quota_state_key{index + 1}.json"), strong_models=strong_model_list))
+
+
+def _tracker_for(index: int):
+    """המפתח הראשון משתמש ב-TRACKER הגלובלי (כמו תמיד); מפתחות נוספים במעקב משלהם."""
+    if index == 0:
+        return TRACKER
+    if index not in _EXTRA_TRACKERS:
+        _EXTRA_TRACKERS[index] = _make_extra_tracker(index)
+    return _EXTRA_TRACKERS[index]
 
 
 def _call_model(client, model: str, contents: list, schema: type[BaseModel], stats: Counter,
-                max_attempts: int | None = None) -> str:
+                max_attempts: int | None = None, tracker=None, no_wait_429: bool = False) -> str:
     """קריאה למודל אחד. לפני כל בקשה: בדיקת מכסה ומרווח (TRACKER).
     - 503/timeout: עד 3 ניסיונות חוזרים על אותו מודל אחרי 3, 8 ו-20 שניות (עם jitter), ואז החריגה עולה
       והשרשרת עוברת למודל הבא.
     - 429 של מגבלת דקה: המתנה של 60 שניות וניסיון חוזר אחד.
     - 429 יומי: המודל מסומן כמוצה, DailyQuotaExhausted, בלי ניסיון חוזר.
     - 404: המודל מסומן כלא זמין להיום, ModelNotFound.
-    max_attempts = תקרת ניסיונות למודל (תקציב קריאות; 1 = בלי ניסיונות חוזרים). כל ניסיון נספר ב-stats."""
+    max_attempts = תקרת ניסיונות למודל (תקציב קריאות; 1 = בלי ניסיונות חוזרים). כל ניסיון נספר ב-stats.
+    tracker = מעקב המכסות של המפתח (ברירת מחדל TRACKER). no_wait_429 = 429 של דקה לא ממתין 60 שניות אלא עולה מיד
+    (כדי שהמעבר ל-מפתח הבא יהיה מהיר). שגיאות שהמתנה לא תפתור (400, אימות) עולות מיד, בלי ניסיון חוזר."""
+    trk = TRACKER if tracker is None else tracker
     config = types.GenerateContentConfig(
         temperature=0,
         response_mime_type="application/json",
@@ -210,7 +256,7 @@ def _call_model(client, model: str, contents: list, schema: type[BaseModel], sta
     attempts = ATTEMPTS_PER_MODEL if max_attempts is None else max(1, min(ATTEMPTS_PER_MODEL, max_attempts))
     minute_429_waited = False
     for attempt in range(attempts):
-        TRACKER.before_call(model)          # יכול לזרוק DailyQuotaExhausted / ModelNotFound (לפני שנשלחה בקשה)
+        trk.before_call(model)          # יכול לזרוק DailyQuotaExhausted / ModelNotFound (לפני שנשלחה בקשה)
         stats["api_calls"] += 1
         stats[f"calls:{model}"] += 1
         try:
@@ -221,16 +267,16 @@ def _call_model(client, model: str, contents: list, schema: type[BaseModel], sta
             _count_failure(stats, e, model)
             code = getattr(e, "code", None)
             if is_daily_quota_error(e):
-                TRACKER.mark_exhausted(model)
+                trk.mark_exhausted(model)
                 stats["daily_quota_hits"] += 1
                 raise DailyQuotaExhausted(model, "429_daily") from e
             if code == 404:
-                TRACKER.mark_unavailable(model)
+                trk.mark_unavailable(model)
                 raise ModelNotFound(model) from e
             if not _is_transient(e) or attempt == attempts - 1:
                 raise
             if code == 429:
-                if minute_429_waited:
+                if minute_429_waited or no_wait_429:
                     raise
                 minute_429_waited = True
                 time.sleep(QUOTA_WAIT_S)
@@ -244,7 +290,7 @@ def _call_with_fallback(client, contents: list, schema: type[BaseModel],
                         models: list[str] | None = None, stats: Counter | None = None,
                         max_calls: int | None = None,
                         attempts_per_model: int | None = None,
-                        fallback_sleep_s: float = 0) -> tuple[str, str]:
+                        fallback_sleep_s: float = 0, tracker=None, no_wait_429: bool = False) -> tuple[str, str]:
     """מנסה את המודלים לפי הסדר. מחזיר (טקסט, שם המודל שענה).
     errors_by_model מתעד לכל מודל שנכשל את הסיבה ("daily_quota" = מכסה יומית; מודל כזה מדולג בלי קריאה).
     max_calls = תקציב קריאות API כולל: כשנוצל, לא עוברים למודל נוסף."""
@@ -264,7 +310,8 @@ def _call_with_fallback(client, contents: list, schema: type[BaseModel],
         calls_before = stats["api_calls"]
         try:
             max_att = attempts_per_model if attempts_per_model is not None else max_calls
-            return _call_model(client, model, contents, schema, stats, max_attempts=max_att), model
+            return _call_model(client, model, contents, schema, stats, max_attempts=max_att, tracker=tracker,
+                               no_wait_429=no_wait_429), model
         except DailyQuotaExhausted as e:
             errors_by_model[model] = "daily_quota"
             last = e                         # מודל מוצה -> מודל הבא, בלי ניסיון חוזר
@@ -285,45 +332,128 @@ def _call_with_fallback(client, contents: list, schema: type[BaseModel],
     raise last
 
 
-def _run(contents: list, schema: type[BaseModel], models: list[str] | None = None,
-         max_calls: int | None = None, attempts_per_model: int | None = None,
-         fallback_sleep_s: float = 0) -> dict:
-    """מריץ בקשה מובנית עם גיבוי ואימות סכמה. בכישלון: {"ok": False, ...} ולא חריגה.
-    אם כל המודלים הגיעו למכסה יומית: error = "מכסה יומית נגמרה" ו-daily_quota_exhausted = רשימת המודלים."""
-    if provider() == "anthropic":
-        return _run_anthropic(contents, schema, models, max_calls)
-    api_key = os.getenv("GEMINI_API_KEY")
-    if not api_key:
-        return {"ok": False, "error": "GEMINI_API_KEY is not set", "models_tried": []}
-    client = genai.Client(api_key=api_key, http_options=types.HttpOptions(timeout=TIMEOUT_MS))
+def _is_recoverable(e: Exception) -> bool:
+    """כשל שמפתח אחר או ספק אחר יכול לפתור: מכסה, מודל לא זמין, עומס/timeout, אימות של המפתח (401/403).
+    בקשה פגומה (400) או חריגה לא מוכרת: לא (אותה בקשה תיכשל בכל מפתח, ובדרך כלל זו תקלה שלנו)."""
+    if isinstance(e, (DailyQuotaExhausted, ModelNotFound)) or _is_transient(e):
+        return True
+    return isinstance(e, errors.APIError) and getattr(e, "code", None) in (401, 403)
 
+
+def _redact(text: str, keys: list[str]) -> str:
+    for k in keys:
+        text = text.replace(k, "***")
+    return text
+
+
+def _run_gemini_key(contents: list, schema: type[BaseModel], api_key: str, index: int, all_keys: list[str],
+                    models: list[str] | None, max_calls: int | None, attempts_per_model: int | None,
+                    fallback_sleep_s: float, no_wait_429: bool) -> dict:
+    """רצף המודלים (עם הניסיונות החוזרים של כל מודל) על מפתח אחד. התוצאה כוללת recoverable: האם מפתח אחר / Claude יכולים לעזור."""
+    client = genai.Client(api_key=api_key, http_options=types.HttpOptions(timeout=TIMEOUT_MS))
+    tracker = _tracker_for(index)
     tried: list[str] = []
     model_errors: dict[str, str] = {}
     stats: Counter = Counter()
     last_error = "unknown"
+    recoverable = False
     json_tries = 1 if attempts_per_model is not None else 2   # מעבר שני: בלי ניסיון חוזר על JSON שבור
     for _ in range(json_tries):  # ניסיון + ניסיון חוזר אחד על JSON שבור
         if max_calls is not None and stats["api_calls"] >= max_calls:
             break
         try:
             text, model = _call_with_fallback(client, contents, schema, tried, model_errors, models, stats, max_calls,
-                                            attempts_per_model, fallback_sleep_s)
+                                            attempts_per_model, fallback_sleep_s, tracker=tracker, no_wait_429=no_wait_429)
             parsed = schema.model_validate_json(text)
             return {"ok": True, "model": model, "model_errors": dict(model_errors), "stats": dict(stats),
                     **parsed.model_dump()}
         except ValidationError:
             last_error = "model returned invalid JSON"
+            recoverable = True
         except Exception as e:  # לא להכשיל את כל הריצה בגלל עמוד אחד
-            last_error = f"{type(e).__name__}: {str(e)[:200].replace(api_key, '***')}"
+            last_error = f"{type(e).__name__}: {_redact(str(e)[:200], all_keys)}"
+            recoverable = _is_recoverable(e)
             break
     result = {"ok": False, "error": last_error, "models_tried": tried, "model_errors": model_errors,
-              "stats": dict(stats)}
+              "stats": dict(stats), "recoverable": recoverable}
     exhausted = [m for m, v in model_errors.items() if v == "daily_quota"]
     if exhausted:
         result["daily_quota_exhausted"] = exhausted
         if len(exhausted) == len(tried):          # כל המודלים שנוסו הגיעו למכסה יומית
             result["error"] = f"{DAILY_QUOTA_MSG}: {', '.join(exhausted)}"
     return result
+
+
+def claude_fallback_available() -> bool:
+    """גיבוי אחרון ב-Claude: דורש ANTHROPIC_API_KEY. אפשר לכבות עם CLAUDE_FALLBACK=0."""
+    return bool(os.getenv("ANTHROPIC_API_KEY")) and (os.getenv("CLAUDE_FALLBACK") or "1").strip() != "0"
+
+
+def _contents_for_claude(contents: list) -> list:
+    """מתרגם את תוכן הבקשה (טקסט + Part של Gemini) לבלוקים של Anthropic, כדי שאותה בקשה תעבור כמות שהיא לגיבוי."""
+    out = []
+    for c in contents:
+        if isinstance(c, (str, dict)):
+            out.append(c)
+            continue
+        data = getattr(getattr(c, "inline_data", None), "data", None)
+        if data is None:
+            raise ValueError("unsupported content part for the Claude fallback")
+        out.append(_anthropic_image(data))
+    return out
+
+
+def _claude_fallback(contents: list, schema: type[BaseModel], max_calls: int | None, gemini_errors: dict,
+                     prior_stats: Counter) -> dict:
+    """קריאה אחת ל-Claude (אותה הוראה, אותה סכמה) אחרי שכל מפתחות Gemini והניסיונות החוזרים נכשלו. התוצאה מסומנת
+    provider="anthropic" ו-fallback=True (לכן לא נשמרת במטמון ומוצגת באזהרה), ו-fallback_from מתעד מה נכשל ב-Gemini."""
+    try:
+        res = _run_anthropic(_contents_for_claude(contents), schema, None, max_calls)
+    except Exception as e:                      # תרגום תוכן / ייבוא SDK: לא להכשיל את העמוד על תקלה בגיבוי
+        res = {"ok": False, "error": f"claude fallback unavailable: {type(e).__name__}", "stats": {}}
+    stats = Counter(prior_stats)
+    stats.update(res.get("stats") or {})
+    stats["claude_fallback_calls"] += 1
+    res = {**res, "stats": dict(stats), "provider": "anthropic", "fallback": True, "fallback_from": dict(gemini_errors)}
+    return res
+
+
+def _run(contents: list, schema: type[BaseModel], models: list[str] | None = None,
+         max_calls: int | None = None, attempts_per_model: int | None = None,
+         fallback_sleep_s: float = 0, claude_fallback: bool = True, no_wait_429: bool = False) -> dict:
+    """מריץ בקשה מובנית עם גיבוי ואימות סכמה. בכישלון: {"ok": False, ...} ולא חריגה.
+    סדר הניסיונות: לכל מפתח Gemini (GEMINI_API_KEYS) לפי הסדר, רצף המודלים עם הניסיונות החוזרים על 503/504 (_call_model);
+    מפתח שמוצה (מכסה) או שנכשל בעומס/timeout/אימות מעביר למפתח הבא. כשכל המפתחות נכשלו: Claude (claude_fallback ו-ANTHROPIC_API_KEY).
+    בקשה פגומה (400) לא מסובבת מפתחות ולא עוברת ל-Claude. אם כל המודלים הגיעו למכסה יומית: error = "מכסה יומית נגמרה" ו-
+    daily_quota_exhausted = רשימת המודלים. התוצאה כוללת provider, api_key_index (אינדקס, לא המפתח) ו-key_errors."""
+    if provider() == "anthropic":
+        return _run_anthropic(contents, schema, models, max_calls)
+    keys = gemini_api_keys()
+    if not keys:
+        no_key = {"ok": False, "error": "GEMINI_API_KEY is not set", "models_tried": [], "recoverable": True}
+        if claude_fallback and claude_fallback_available():
+            return _claude_fallback(contents, schema, max_calls, {}, Counter())
+        return no_key
+    total: Counter = Counter()
+    key_errors: dict[int, str] = {}
+    last: dict = {}
+    for index, api_key in enumerate(keys):
+        res = _run_gemini_key(contents, schema, api_key, index, keys, models, max_calls, attempts_per_model,
+                              fallback_sleep_s, no_wait_429)
+        total.update(res.get("stats") or {})
+        if res.get("ok"):
+            if index:
+                total["key_rotations"] += index
+            extra = {"key_errors": dict(key_errors)} if key_errors else {}
+            return {**res, "stats": dict(total), "provider": "gemini", "api_key_index": index, **extra}
+        last = res
+        key_errors[index] = (res.get("model_errors") and next(iter(res["model_errors"].values()))) or res.get("error", "unknown")
+        if not res.get("recoverable"):
+            break                                   # בקשה פגומה: מפתח אחר או Claude לא יעזרו
+    last = {**last, "stats": dict(total), "provider": "gemini", "key_errors": dict(key_errors)}
+    if last.get("recoverable") and claude_fallback and claude_fallback_available():
+        return _claude_fallback(contents, schema, max_calls, key_errors, total)
+    return last
 
 
 # ---------------------------------------------------------------------------------------------------------------
@@ -375,16 +505,21 @@ def _shrunk_jpeg(data: bytes, max_edge: int = ANTHROPIC_MAX_EDGE) -> bytes:
     return out.getvalue()
 
 
-def _image_part(data: bytes):
-    """חלק תמונה לפי הספק: Part של Gemini, או בלוק תמונה של Anthropic (מוקטן ל-1568 בצלע הארוכה)."""
-    if provider() != "anthropic":
-        return types.Part.from_bytes(data=data, mime_type="image/jpeg")
+def _anthropic_image(data: bytes) -> dict:
+    """בלוק תמונה של Anthropic (מוקטן ל-1568 בצלע הארוכה)."""
     try:
         data = _shrunk_jpeg(data)
     except Exception:
         pass                                  # תמונה לא תקינה (בבדיקות): נשלחת כמות שהיא
     return {"type": "image", "source": {"type": "base64", "media_type": "image/jpeg",
                                         "data": base64.standard_b64encode(data).decode()}}
+
+
+def _image_part(data: bytes):
+    """חלק תמונה לפי הספק: Part של Gemini, או בלוק תמונה של Anthropic."""
+    if provider() != "anthropic":
+        return types.Part.from_bytes(data=data, mime_type="image/jpeg")
+    return _anthropic_image(data)
 
 
 def _count_anthropic_failure(stats: Counter, e: Exception, model: str) -> None:
@@ -485,21 +620,31 @@ def _run_regions_with_fallback(contents: list, chain: list[str]) -> dict:
     model_errors: dict[str, str] = {}
     tried: list[str] = []
     last_error = "unknown"
+    recoverable_all, key_errors = True, {}
     for i, model in enumerate(chain):
         if i and not (set(model_errors.values()) <= {"daily_quota", "404"}):
             time.sleep(SECOND_PASS_FALLBACK_SLEEP_S)         # אחרי עומס / timeout: מעט המתנה לפני המודל הבא
-        res = _run(contents, RegionsExtraction, [model], max_calls=1, attempts_per_model=1)
+        res = _run(contents, RegionsExtraction, [model], max_calls=REGION_ATTEMPTS, attempts_per_model=REGION_ATTEMPTS,
+                   claude_fallback=False, no_wait_429=True)         # Claude רק פעם אחת, אחרי כל השרשרת
         stats.update(res.get("stats") or {})
         tried.append(model)
+        recoverable_all = recoverable_all and bool(res.get("recoverable", True))
+        key_errors = res.get("key_errors") or key_errors
         if res.get("ok"):
             return {**res, "stats": dict(stats), "fallback": i > 0, "fallback_from": dict(model_errors),
                     "model_errors": {**model_errors, **(res.get("model_errors") or {})}}
         last_error = res.get("error", "unknown")
         model_errors[model] = ("daily_quota" if model in (res.get("daily_quota_exhausted") or [])
                                else (res.get("model_errors") or {}).get(model) or last_error)
+    if recoverable_all and claude_fallback_available() and provider() != "anthropic":
+        res = _claude_fallback(contents, RegionsExtraction, REGION_ATTEMPTS, model_errors, stats)      # גיבוי אחרון: הדף עדיין מעובד
+        if res.get("ok"):
+            return {**res, "model_errors": dict(model_errors)}
+        stats = Counter(res.get("stats") or {})
+        last_error = f"{last_error}; claude: {res.get('error', 'unknown')}"
     result = {"ok": False, "error": last_error, "models_tried": tried, "model_errors": model_errors, "stats": dict(stats)}
     exhausted = [m for m, v in model_errors.items() if v == "daily_quota"]
-    if exhausted:
+    if exhausted and "claude:" not in last_error:
         result["daily_quota_exhausted"] = exhausted
         if len(exhausted) == len(tried):
             result["error"] = f"{DAILY_QUOTA_MSG}: {', '.join(exhausted)}"
