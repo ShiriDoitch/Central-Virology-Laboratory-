@@ -7,17 +7,19 @@ gatherUsageStats = false
 [server]
 headless = true
 
-# עיצוב: ניטרלי חם, טורקיז קליני לאלמנטים אינטראקטיביים בלבד (primaryColor). צבעי הביטחון לא נגזרים ממנו.
+# עיצוב: בהירה, בצבעי המעבדה (טורקיז), כדי שגם רכיבי Streamlit (טבלה, סרגל, מיקוד) יתאימו. צבעי הביטחון לא נגזרים ממנו.
 [theme]
 base = "light"
-backgroundColor = "#FAFAF8"
-secondaryBackgroundColor = "#F0EEE8"
-textColor = "#1C2321"
 primaryColor = "#2D5F6B"
-font = "Heebo"
-codeFont = "IBM Plex Mono"
-borderColor = "#D9D6CC"
-baseRadius = "6px"
+backgroundColor = "#F7F6F2"
+secondaryBackgroundColor = "#F2F0EA"
+textColor = "#1C2321"
+borderColor = "#E3E0D7"
+dataframeBorderColor = "#ECE9E1"
+dataframeHeaderBackgroundColor = "#F5F3EE"
+baseRadius = "8px"
+font = "Heebo:https://fonts.googleapis.com/css2?family=Heebo:wght@400;500;600;700&display=swap"
+codeFont = "IBM Plex Mono:https://fonts.googleapis.com/css2?family=IBM+Plex+Mono:wght@400;500&display=swap"
 greenColor = "#2E7D4F"
 orangeColor = "#B8762E"
 yellowColor = "#B8762E"
