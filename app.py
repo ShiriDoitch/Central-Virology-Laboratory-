@@ -28,13 +28,16 @@ YELLOW_HEX = "#" + YELLOW.fgColor.rgb[-6:]            # ערך בכתב יד, ש
 UI_TONE = {GREEN_HEX: "#2E7D4F", ORANGE_HEX: "#8A561A", YELLOW_HEX: "#6B5D1C", CONFIRMED_HEX: "#2F5E8E"}
 UI_FILL = {ORANGE_HEX: "#FBEFDF", YELLOW_HEX: "#F4EDD3", CONFIRMED_HEX: "#E6EEF8"}
 UI_DOT = {"green": "#2E7D4F", "orange": "#C27A2C", "yellow": "#A8932F", "confirmed": "#3F6FA0", "neutral": "#2D5F6B", "empty": "#A3A39A"}
-WORKSPACE_H = 588                                    # גובה אזור העבודה (טבלה + פאנל פירוט), כך שהכול נכנס במסך בלי גלילת דף
-EVIDENCE_H = 292                                     # החלק הנגלל בפאנל (חיתוך, דגלים, פרטים); הפעולות מתחתיו תמיד גלויות
+TABLE_H = 520                                        # גובה מרבי של הטבלה ברוחב מלא (גלילה פנימית); כרטיס הבדיקה נפתח מתחתיה
+ATTENTION = (ORANGE_HEX, YELLOW_HEX, "")             # סטטוסים שדורשים עין אנושית: כתום, צהוב, ריק
+# סינון מהיר: מפתח -> תווית. "תקין" = שורה בלי אף שדה לבדיקה (ירוק או מאושר בלבד)
+FILTERS = {"all": "הכול", "green": "🟢 תקין", "orange": "🟠 לבדיקה", "yellow": "🟡 זהב", "empty": "⚪ ריק"}
+FOCUS_LABEL = "מצב פוקוס לבורנטית (הצג חריגים בלבד)"
 ROW_H = 40                                           # גובה שורה בטבלה: מרווח נוח לקריאה
 # רוחב מינימלי לעמודה בפיקסלים. הרשת מחלקת את הרוחב הפנוי באופן יחסי, ולכן הסכום (כ-720) קטן מרוחב הטבלה גם במסך מחשב נייד:
 # הרשת מצוירת משמאל לימין, וגלילה אופקית הייתה מסתירה דווקא את העמודות הימניות (עמוד, שם פרטי).
-COL_WIDTH = {"first_name": 74, "last_name": 82, "id": 96, "center": 136, "date": 86, "sender": 132, "commitment": 94}
-PAGE_COL_W = 46
+COL_WIDTH = {"first_name": 96, "last_name": 104, "id": 120, "center": 150, "date": 108, "sender": 170, "commitment": 120}
+PAGE_COL_W = 64
 PAGE_COL = "עמוד"                                   # עמודת עמוד המקור בטבלה (לא שדה נתונים)
 CODE_KEYS = ("id", "center", "commitment")           # שדות שהם קודים מילוליים: מוצגים במונוספייס
 TITLES = dict(COLUMNS)
@@ -162,9 +165,16 @@ st.markdown(
     @media (max-width: 640px) {.kpis {grid-template-columns: repeat(2, minmax(0, 1fr));}}
 
     /* ---------- סרגל אזור העבודה: כותרת + מקרא, מעל הטבלה והפאנל ---------- */
-    .ws-bar {display: flex; align-items: center; justify-content: space-between; flex-wrap: wrap; gap: 8px 24px; padding: 8px 2px 0;}
-    .ws-title {font-size: 1.08rem; font-weight: 600; color: var(--ink);}
+    .ws-title {font-size: 1.12rem; font-weight: 600; color: var(--ink); padding-top: 6px;}
     .ws-title span {font-size: 0.82rem; font-weight: 400; color: var(--ink-3); margin-right: 10px;}
+    .st-key-toolbar {background: var(--paper) !important; border: 1px solid var(--line) !important; border-radius: var(--radius) !important; box-shadow: var(--shadow); padding: 0.6rem 1rem 0.7rem !important;}
+    .st-key-toolbar [data-testid="stButtonGroup"] button {border-radius: 999px !important; padding: 0.25rem 0.9rem; font-size: 0.86rem;}
+    .st-key-toolbar [data-testid="stButtonGroup"] > div {gap: 6px; flex-wrap: wrap;}
+    .st-key-toolbar [data-testid="stWidgetLabel"] p {font-size: 0.78rem; font-weight: 600; color: var(--ink-2);}
+    .st-key-focus_wrap {background: var(--accent-soft); border: 1px solid #CFDFE1; border-radius: 999px; padding: 6px 14px 6px 10px !important; width: fit-content; margin-inline-start: auto;}
+    .st-key-focus_wrap [data-testid="stWidgetLabel"] p, .st-key-focus_wrap label p {font-size: 0.9rem !important; font-weight: 600 !important; color: var(--accent-ink) !important;}
+    .filter-note {font-size: 0.82rem; color: var(--ink-3); margin-top: 2px;}
+    .filter-note b {color: var(--accent-ink); font-weight: 600;}
     .legend {display: flex; flex-wrap: wrap; gap: 6px 18px; font-size: 0.8rem; color: var(--ink-2);}
     .legend span {display: inline-flex; align-items: center; gap: 7px;}
     .sw {display: inline-block; width: 22px; height: 14px; border-radius: 4px; border: 1px solid; flex: none; font-size: 9px; line-height: 12px; text-align: center; font-weight: 600;}
@@ -175,41 +185,42 @@ st.markdown(
     [data-testid="stDataFrame"], [data-testid="stDataFrame"] canvas {direction: ltr;}
 
     /* ---------- פאנל הפירוט: כותרת, אזור ראיות נגלל, ופעולות שתמיד גלויות ---------- */
-    .st-key-detail_panel {background: var(--paper) !important; border: 1px solid var(--line) !important; border-radius: var(--radius) !important; box-shadow: var(--shadow); padding: 0 !important; gap: 0 !important;}
-    .st-key-detail_panel > div {gap: 0;}
-    .panel-head {display: flex; align-items: center; justify-content: space-between; gap: 12px; padding: 14px 18px 12px; border-bottom: 1px solid var(--line); background: #FCFBF8; border-radius: var(--radius) var(--radius) 0 0;}
-    .panel-head .ph-eyebrow {font-size: 0.75rem; color: var(--ink-3);}
-    .panel-head .ph-title {font-size: 1.08rem; font-weight: 600; color: var(--ink); line-height: 1.3;}
-    .badge {flex: none; display: inline-flex; align-items: center; gap: 6px; font-size: 0.76rem; font-weight: 500; padding: 3px 10px; border-radius: 999px; border: 1px solid;}
+    .st-key-detail_panel {background: var(--paper) !important; border: 1px solid var(--line) !important; border-top: 3px solid var(--accent) !important;
+          border-radius: var(--radius) !important; box-shadow: 0 2px 6px rgba(28,35,33,.05), 0 10px 30px rgba(31,74,84,.08); padding: 1rem 1.4rem 1.3rem !important; scroll-margin-top: 140px;}
+    .panel-head {display: flex; align-items: center; gap: 14px; flex-wrap: wrap;}
+    .panel-head .ph-eyebrow {font-size: 0.78rem; color: var(--ink-3);}
+    .panel-head .ph-title {font-size: 1.25rem; font-weight: 600; color: var(--ink); line-height: 1.3;}
+    .badge {flex: none; display: inline-flex; align-items: center; gap: 6px; font-size: 0.78rem; font-weight: 500; padding: 3px 11px; border-radius: 999px; border: 1px solid;}
     .badge::before {content: ""; width: 7px; height: 7px; border-radius: 50%; background: currentColor;}
     .badge.green {color: #2E7D4F; background: #EAF4EE; border-color: #CFE5D7;}
     .badge.orange {color: #8A561A; background: #FBEFDF; border-color: #F0D9B8;}
     .badge.yellow {color: #6B5D1C; background: #F4EDD3; border-color: #E4D8A8;}
     .badge.confirmed {color: #2F5E8E; background: #E6EEF8; border-color: #C9D9EC;}
     .badge.empty {color: #6B7470; background: var(--wash); border-color: var(--line);}
-    .st-key-detail_evidence {padding: 12px 18px 8px !important; border-bottom: 1px solid var(--line);}
-    .st-key-detail_actions {padding: 12px 18px 16px !important; background: #FCFBF8; border-radius: 0 0 var(--radius) var(--radius);}
-    .st-key-detail_actions [data-testid="stVerticalBlock"] {gap: 0.5rem;}
-    .st-key-detail_actions [data-testid="stAlert"] > div {padding: 0.45rem 0.8rem;}
-    .st-key-detail_actions [data-testid="stAlert"] [data-testid="stMarkdownContainer"] p {font-size: 0.84rem;}
-    .st-key-detail_actions .stTextInput input {height: 2.4rem;}
+    .panel-rule {height: 1px; background: var(--line); margin: 4px 0 6px;}
+    .col-label {font-size: 0.76rem; font-weight: 700; letter-spacing: .02em; color: var(--ink-3); margin-bottom: 2px;}
+    .st-key-detail_actions {background: #FCFBF8 !important; border: 1px solid var(--line) !important; border-radius: var(--radius) !important; padding: 0.9rem 1rem 1rem !important;}
+    .st-key-detail_actions [data-testid="stVerticalBlock"] {gap: 0.6rem;}
+    .st-key-detail_actions {position: sticky; top: 128px; z-index: 5;}     /* האישור נשאר גלוי בזמן שגוללים בראיות */
+    .st-key-detail_evidence [data-testid="stImage"] img, .st-key-detail_evidence [data-testid="stFullScreenFrame"] img {max-height: 560px; width: auto !important; max-width: 100%; object-fit: contain; border: 1px solid var(--line); border-radius: 6px;}
+    .st-key-detail_actions [data-testid="stAlert"] > div {padding: 0.5rem 0.85rem;}
+    .st-key-detail_actions [data-testid="stAlert"] [data-testid="stMarkdownContainer"] p {font-size: 0.86rem;}
     .st-key-detail_actions [data-baseweb="input"], .st-key-detail_actions [data-baseweb="base-input"], .st-key-detail_actions .stTextInput input {background: var(--paper) !important;}
     .st-key-detail_actions [data-baseweb="input"] {border: 1px solid var(--line-2);}
-    .st-key-detail_evidence [data-testid="stSlider"] label p {font-size: 0.8rem; color: var(--ink-2);}
     .st-key-detail_actions .stTextInput label p {font-size: 0.82rem; color: var(--ink-2);}
     .st-key-detail_suggest .stButton > button {min-height: 2rem; padding: 2px 14px; border-radius: 999px; background: var(--accent-soft); border-color: #CFDFE1; color: var(--accent-ink);}
     .st-key-detail_suggest .stButton > button:hover {background: #DCE8EA;}
-    .section-label {font-size: 0.78rem; font-weight: 600; color: var(--ink-2); margin: 2px 0 -2px;}
-    .facts {display: grid; grid-template-columns: auto 1fr; gap: 6px 14px; font-size: 0.88rem; align-items: baseline; margin: 4px 0 2px;}
-    .facts dt {color: var(--ink-3); font-weight: 500;}
-    .facts dd {margin: 0; color: var(--ink);}
+    .st-key-detail_evidence [data-testid="stSlider"] label p {font-size: 0.8rem; color: var(--ink-2);}
+    .st-key-detail_evidence [data-testid="stMarkdownContainer"] p {line-height: 1.7;}
     .st-key-detail_panel [data-testid="stExpander"] {border: 1px solid var(--line); border-radius: 8px; background: var(--paper);}
     .st-key-detail_panel [data-testid="stExpander"] summary p {font-size: 0.85rem;}
-    .st-key-detail_panel [data-testid="stSlider"] {padding: 0 4px;}
-    .placeholder {display: flex; flex-direction: column; align-items: center; justify-content: center; text-align: center; height: 100%; min-height: 360px; padding: 32px; color: var(--ink-3);}
-    .placeholder .ring {width: 44px; height: 44px; border-radius: 12px; border: 1.5px dashed var(--line-2); margin-bottom: 14px; display: grid; place-items: center; color: var(--accent); font-size: 20px;}
-    .placeholder b {color: var(--ink); font-weight: 600; font-size: 0.98rem; margin-bottom: 4px;}
-    .placeholder p {text-align: center !important; font-size: 0.86rem; max-width: 300px; margin: 0;}
+    .placeholder {display: flex; align-items: center; justify-content: center; gap: 14px; text-align: right; padding: 18px 22px; color: var(--ink-3);
+          background: var(--paper); border: 1px dashed var(--line-2); border-radius: var(--radius);}
+    .placeholder .ring {flex: none; width: 36px; height: 36px; border-radius: 10px; background: var(--accent-soft); display: grid; place-items: center; color: var(--accent); font-size: 17px;}
+    .placeholder b {display: block; color: var(--ink); font-weight: 600; font-size: 0.95rem;}
+    .placeholder span {font-size: 0.85rem;}
+    .empty-filter {background: var(--paper); border: 1px solid var(--line); border-radius: var(--radius); padding: 28px; text-align: center; color: var(--ink-3);}
+    .empty-filter b {display: block; color: #2E7D4F; font-size: 1rem; margin-bottom: 4px;}
     /* דגלים בפירוט: תגיות ענבר עדינות */
     .flag {display: inline-flex; align-items: center; gap: 6px; margin: 2px 0 2px 6px; padding: 2px 10px; border-radius: 999px; color: #8A561A; background: #FBEFDF; border: 1px solid #F0D9B8; font-size: 0.8rem;}
 
@@ -365,6 +376,8 @@ def _clear(page: int, okey: str) -> None:
 INPUT_HINTS = {"id": 'ספרות בלבד', "commitment": "ספרות בלבד", "center": "ספרות; כמה ערכים מופרדים ב-;", "date": "dd.mm.yyyy"}
 
 
+
+
 def cell_status(cell) -> tuple[str, str]:
     """מחלקת ה-CSS ותווית הסטטוס של תא (אותו סדר עדיפויות כמו בטבלה ובאקסל)."""
     if cell.confirmed:
@@ -378,28 +391,48 @@ def cell_status(cell) -> tuple[str, str]:
     return "empty", "לא נמצא"
 
 
-def render_panel_header(er, key: str) -> None:
-    """כותרת הפאנל: שם השדה, העמוד ותג הסטטוס. רק טקסט קבוע ומספרים (בלי טקסט מהטופס)."""
-    cls, label = cell_status(er.cells[key])
-    st.markdown(
-        f"<div class='panel-head'><div><div class='ph-eyebrow'>עמוד {int(er.page)} · פירוט ואישור</div>"
-        f"<div class='ph-title'>{html.escape(TITLES[key])}</div></div><span class='badge {cls}'>{label}</span></div>",
-        unsafe_allow_html=True,
-    )
+# ---------- סינון ובחירה ----------
 
+def row_masks(colors: pd.DataFrame) -> dict[str, pd.Series]:
+    """לכל מסנן מהיר: אילו שורות מוצגות. שורה "דורשת תשומת לב" אם יש בה שדה כתום, צהוב או ריק (מאושר = טופל)."""
+    fc = colors[[TITLES[k] for k in FIELD_KEYS]]
+    has = {name: (fc == hexv).any(axis=1) for name, hexv in (("orange", ORANGE_HEX), ("yellow", YELLOW_HEX), ("empty", ""))}
+    attention = has["orange"] | has["yellow"] | has["empty"]
+    return {"all": pd.Series(True, index=colors.index), "green": ~attention, **has, "attention": attention}
+
+
+def visible_rows(colors: pd.DataFrame, status_filter: str, focus: bool) -> pd.Series:
+    masks = row_masks(colors)
+    mask = masks.get(status_filter, masks["all"])
+    return mask & masks["attention"] if focus else mask
+
+
+def next_attention_cell(colors: pd.DataFrame, rows, current) -> tuple[int, str] | None:
+    """התא הבא שדורש בדיקה (כתום / צהוב / ריק) אחרי התא הנוכחי, בסדר הקריאה (שורה, ואז שדה מימין לשמאל), עם חזרה להתחלה."""
+    titles = [TITLES[k] for k in FIELD_KEYS]
+    cells = [(int(r), t) for r in rows for t in titles if colors.at[r, t] in ATTENTION]
+    if not cells:
+        return None
+    if current is None:
+        return cells[0]
+    pos = lambda c: (c[0], titles.index(c[1]) if c[1] in titles else -1)
+    later = [c for c in cells if pos(c) > pos(current)]
+    nxt = later[0] if later else cells[0]
+    return None if nxt == tuple(current) else nxt
+
+
+def _select(cell) -> None:
+    st.session_state["selected_cell"] = tuple(cell) if cell else None
+    st.session_state["_scroll_to_detail"] = bool(cell)
+
+
+# ---------- כרטיס הבדיקה (מתחת לטבלה) ----------
 
 def render_evidence(page_res: dict, er, key: str, image: bytes | None) -> None:
-    """החלק הנגלל של הפאנל: חיתוך האזור מהעמוד הנקי (עם הגדלה) או העמוד המלא, הערך, הדגלים, החלופות והקריאות הגולמיות."""
+    """צד הראיות: חיתוך האזור מהעמוד הנקי (עם הגדלה) או העמוד המלא, הערך, הדגלים, החלופות והקריאות הגולמיות."""
     cell = er.cells[key]
     crop = crop_for(page_res, key)
-    if crop:
-        zoom = st.slider("הגדלה", 100, 600, 200, 50, key=f"zoom_{er.page}_{FIELD_REGION[key]}", format="%d%%")
-        st.markdown(zoom_html(crop, zoom), unsafe_allow_html=True)
-        st.caption("האזור שממנו נקרא השדה, מהעמוד הנקי. ההגדלה בסרגל משנה את גודל התמונה, וגוללים בתוך המסגרת.")
-    else:
-        st.caption("אין חיתוך זמין לשדה הזה; העמוד המלא מוצג.")
-        if image:
-            st.image(image, caption=f"עמוד {er.page}", width="stretch")
+    st.markdown("<div class='col-label'>ראיות מהטופס</div>", unsafe_allow_html=True)
     code = md_code if key in CODE_KEYS else md_text       # קודים במונוספייס; שמות ופרוזה לא. כל טקסט מהטופס עובר escape
     st.markdown(f"**ערך:** {code(cell.value) if cell.value else '—'}" + (f"  \n**נקרא (raw):** {code(cell.raw)}" if not cell.value and cell.raw else ""))
     if cell.flags:
@@ -411,6 +444,14 @@ def render_evidence(page_res: dict, er, key: str, image: bytes | None) -> None:
         st.markdown(f"**{label}:** " + " | ".join(md_text(a) for a in cell.alternatives))
     if cell.hints:
         st.caption("רמזים: " + ", ".join(cell.hints))
+    if crop:
+        zoom = st.slider("הגדלה", 100, 600, 200, 50, key=f"zoom_{er.page}_{FIELD_REGION[key]}", format="%d%%")
+        st.markdown(zoom_html(crop, zoom), unsafe_allow_html=True)
+        st.caption("האזור שממנו נקרא השדה, מהעמוד הנקי. ההגדלה בסרגל משנה את גודל התמונה, וגוללים בתוך המסגרת.")
+    else:
+        st.caption("אין חיתוך זמין לשדה הזה; העמוד המלא מוצג.")
+        if image:
+            st.image(image, caption=f"עמוד {er.page}", width="stretch")
     if crop and image:
         with st.expander("העמוד המלא"):
             st.image(image, caption=f"עמוד {er.page}", width="stretch")
@@ -421,11 +462,12 @@ def render_evidence(page_res: dict, er, key: str, image: bytes | None) -> None:
 
 
 def render_confirmation(page_res: dict, er, key: str) -> None:
-    """אזור הפעולות (תמיד גלוי, מתחת לראיות): מצב הערך, הצעות כלחצנים (גם כשהתא ריק), הקלדה חופשית וכפתורי האישור.
+    """צד הפעולות: מצב הערך, הצעות כלחצנים (גם כשהתא ריק), הקלדה חופשית וכפתורי האישור.
     ערך שהוקלד או נבחר נשמר כערך סופי ומיוצא כ"אושר על ידי המשתמש" (כחול). בלי אישור, שם בכתב יד נשאר כתום."""
     cell, page = er.cells[key], er.page
     okey = override_key(key, er.index)
     overrides = st.session_state.setdefault("name_overrides", {})
+    st.markdown("<div class='col-label'>אישור הערך</div>", unsafe_allow_html=True)
     if cell.confirmed:
         st.success(f"אושר על ידי המשתמש: {md_text(cell.value)}")
     elif cell.yellow:
@@ -436,7 +478,7 @@ def render_confirmation(page_res: dict, er, key: str) -> None:
         st.info(f"ערך של המערכת: {md_text(cell.value)}")
     suggestions = name_suggestions(cell, key)
     if suggestions:
-        st.markdown("<div class='section-label'>הצעות (לחצי כדי לאשר)</div>", unsafe_allow_html=True)
+        st.markdown("**הצעות (לחצי כדי לאשר):**")
         if key == "id" and "id_checksum_failed" in cell.flags and not cell.confirmed:
             st.caption("אחרי הערך שנקרא: החלפת ספרה אחת בזוגות מבולבלים שעוברת את ספרת הביקורת. אין תיקון אוטומטי.")
         with st.container(horizontal=True, gap="small", key="detail_suggest"):
@@ -457,13 +499,27 @@ def render_confirmation(page_res: dict, er, key: str) -> None:
         clear_slot.button("בטלי אישור", key=f"clr_{page}_{okey}", on_click=_clear, args=(page, okey), width="stretch")
 
 
-def render_detail(page_res: dict, er, key: str, image: bytes | None) -> None:
-    """הפאנל: כותרת קבועה, ראיות בגלילה פנימית (גובה קבוע), ופעולות האישור מתחתיהן, כך שהן תמיד גלויות בלי לגלול את הדף."""
-    render_panel_header(er, key)
-    with st.container(height=EVIDENCE_H, border=False, key="detail_evidence"):
-        render_evidence(page_res, er, key, image)
-    with st.container(key="detail_actions"):
-        render_confirmation(page_res, er, key)
+def render_detail(page_res: dict, er, key: str, image: bytes | None, row_i: int, n_rows: int, nxt, hidden: bool) -> None:
+    """כרטיס הבדיקה ברוחב מלא: כותרת עם ניווט, ואז ראיות (מימין) ופעולות האישור (משמאל) זו לצד זו, בלי חפיפה."""
+    cls, label = cell_status(er.cells[key])
+    head, nav_next, nav_close = st.columns([6, 1.5, 0.9], vertical_alignment="center")
+    head.markdown(
+        f"<div class='panel-head'><div><div class='ph-eyebrow'>עמוד {int(er.page)} · שורה {row_i + 1} מתוך {n_rows}"
+        f"{' · מוסתרת בסינון הנוכחי' if hidden else ''}</div><div class='ph-title'>{html.escape(TITLES[key])}</div></div>"
+        f"<span class='badge {cls}'>{label}</span></div>",
+        unsafe_allow_html=True,
+    )
+    nav_next.button("לבדיקה הבאה ←", key="next_cell", on_click=_select, args=(nxt,), disabled=nxt is None, width="stretch",
+                    help="התא הבא שדורש בדיקה (כתום, צהוב או ריק)")
+    nav_close.button("סגירה", key="close_detail", on_click=_select, args=(None,), width="stretch")
+    st.markdown("<div class='panel-rule'></div>", unsafe_allow_html=True)
+    ev_col, act_col = st.columns([1.45, 1], gap="large")       # RTL: הראיות מימין, האישור משמאל
+    with ev_col:
+        with st.container(key="detail_evidence"):
+            render_evidence(page_res, er, key, image)
+    with act_col:
+        with st.container(key="detail_actions"):
+            render_confirmation(page_res, er, key)
 
 
 def kpi_cards(items) -> str:
@@ -478,6 +534,17 @@ def kpi_cards(items) -> str:
 
 def share(n: int, total: int) -> str:
     return f"{round(100 * n / total)}% מהשדות" if total else "—"
+
+
+LEGEND_HTML = (
+    "<div class='legend'>"
+    f"<span><i class='sw' style='color:{UI_TONE[GREEN_HEX]};border-color:#CFE5D7;background:#fff'>א</i>ירוק: בלי דגל</span>"
+    f"<span><i class='sw' style='color:{UI_TONE[ORANGE_HEX]};border-color:#F0D9B8;background:{UI_FILL[ORANGE_HEX]}'>א</i>כתום: לבדיקה</span>"
+    f"<span title='{YELLOW_TEXT}'><i class='sw' style='color:{UI_TONE[YELLOW_HEX]};border-color:#E4D8A8;background:{UI_FILL[YELLOW_HEX]}'>א</i>"
+    "זהב: שתי קריאות מסכימות (ת\"ז, שם)</span>"
+    f"<span><i class='sw' style='color:{UI_TONE[CONFIRMED_HEX]};border-color:#C9D9EC;background:{UI_FILL[CONFIRMED_HEX]}'>א</i>כחול: אושר על ידי המשתמש</span>"
+    "<span><i class='sw' style='border-color:#D4D0C4;border-style:dashed;background:#fff'></i>ריק: לא נמצא</span></div>"
+)
 
 
 # ---------- דף ----------
@@ -576,49 +643,77 @@ wb.save(buf)
 download_slot.download_button("הורד אקסל", buf.getvalue(), file_name="commitments.xlsx", key="dl_xlsx", width="stretch",
                               mime="application/vnd.openxmlformats-officedocument.spreadsheetml.sheet", type="primary")
 
-# סרגל אזור העבודה: כותרת ומקרא ברוחב מלא, כך שהטבלה והפאנל מתחילים באותו גובה
+# ---------- סרגל סינון מהיר + מצב פוקוס ----------
+masks = row_masks(colors)
+counts = {k: int(masks[k].sum()) for k in FILTERS}
+with st.container(key="toolbar"):
+    f_col, focus_col = st.columns([3, 1.25], vertical_alignment="bottom")
+    with f_col:
+        status_filter = st.segmented_control("סינון מהיר לפי סטטוס", list(FILTERS), default="all", key="status_filter",
+                                             format_func=lambda k: f"{FILTERS[k]} · {counts[k]}") or "all"
+    with focus_col:
+        with st.container(key="focus_wrap"):
+            focus = st.toggle(FOCUS_LABEL, key="focus_mode", help="מסתיר שורות שכל השדות בהן ירוקים או מאושרים; נשארות רק שורות עם שדה כתום, צהוב או ריק")
+    st.markdown(LEGEND_HTML, unsafe_allow_html=True)
+
+show = visible_rows(colors, status_filter, focus)
+view, view_colors = df[show], colors[show]
+counts_attention = int(masks["attention"].sum())
 st.markdown(
-    f"<div class='ws-bar'><div class='ws-title'>תוצאות<span>{len(df)} שורות · לחצי על תא כדי לראות ראיות</span></div>"
-    f"<div class='legend'>"
-    f"<span><i class='sw' style='color:{UI_TONE[GREEN_HEX]};border-color:#CFE5D7;background:#fff'>א</i>ירוק: בלי דגל</span>"
-    f"<span><i class='sw' style='color:{UI_TONE[ORANGE_HEX]};border-color:#F0D9B8;background:{UI_FILL[ORANGE_HEX]}'>א</i>כתום: לבדיקה</span>"
-    f"<span title='{YELLOW_TEXT}'><i class='sw' style='color:{UI_TONE[YELLOW_HEX]};border-color:#E4D8A8;background:{UI_FILL[YELLOW_HEX]}'>א</i>"
-    f"זהב: שתי קריאות מסכימות (ת\"ז, שם)</span>"
-    f"<span><i class='sw' style='color:{UI_TONE[CONFIRMED_HEX]};border-color:#C9D9EC;background:{UI_FILL[CONFIRMED_HEX]}'>א</i>כחול: אושר על ידי המשתמש</span>"
-    f"<span><i class='sw' style='border-color:#D4D0C4;border-style:dashed;background:#fff'></i>ריק: לא נמצא</span></div></div>",
+    f"<div class='ws-title'>תוצאות<span>מציג {len(view)} מתוך {len(df)} שורות · {counts_attention} שורות עדיין דורשות בדיקה"
+    f" · לחצי על תא כדי לפתוח את כרטיס הבדיקה</span></div>",
     unsafe_allow_html=True,
 )
 
-table_col, detail_col = st.columns([1.85, 1], gap="medium")      # RTL: הטבלה מימין, הפאנל משמאל
+# ---------- הטבלה ברוחב מלא ----------
+# selected_cell נשמר תמיד כ(אינדקס שורה בטבלה המלאה, שם עמודה), כך שהבחירה נשמרת גם כשהסינון משתנה.
+grid_key = f"grid_{status_filter}_{int(bool(focus))}"      # מפתח חדש לכל סינון: הבחירה של הרשת מתאפסת כשהשורות משתנות
 selected = None
-with table_col:
+if view.empty:
+    st.markdown("<div class='empty-filter'><b>אין שורות להצגה</b>"
+                + ("אין חריגים בסינון הזה: כל השורות תקינות או מאושרות." if focus else "אין שורות שמתאימות לסינון.") + "</div>",
+                unsafe_allow_html=True)
+    selected = st.session_state.get("selected_cell")
+else:
     try:
-        event = st.dataframe(style(df, colors), width="stretch", hide_index=True, on_select="rerun", column_config=grid_config(df.columns),
-                             selection_mode="single-cell", key="grid", row_height=ROW_H, height=min(WORKSPACE_H, 40 + ROW_H * len(df)))
+        event = st.dataframe(style(view, view_colors), width="stretch", hide_index=True, on_select="rerun", column_config=grid_config(view.columns),
+                             selection_mode="single-cell", key=grid_key, row_height=ROW_H, height=min(TABLE_H, 40 + ROW_H * len(view)))
         cells = event.selection.cells
-        if cells and (cells[0][1] if isinstance(cells[0][1], str) else df.columns[int(cells[0][1])]) != PAGE_COL:
+        sig = (grid_key, tuple(tuple(c) for c in cells)) if cells else None
+        if cells and sig != st.session_state.get("_grid_sig"):      # לחיצה חדשה בטבלה (לא בחירה ישנה שנשארה ברשת)
+            st.session_state["_grid_sig"] = sig
             row, col = cells[0]
-            selected = (int(row), col if isinstance(col, str) else df.columns[int(col)])
-            st.session_state["selected_cell"] = selected
-        else:                                           # בלי בחירה, או לחיצה על עמודת העמוד: נשארת הבחירה הקודמת
-            selected = st.session_state.get("selected_cell")
-            if selected and selected[0] >= len(df):
-                selected = None
+            col = col if isinstance(col, str) else view.columns[int(col)]
+            if col != PAGE_COL:                         # לחיצה על עמודת העמוד: נשארת הבחירה הקודמת
+                _select((int(view.index[int(row)]), col))
+        elif not cells:
+            st.session_state["_grid_sig"] = None
+        selected = st.session_state.get("selected_cell")
     except Exception:                                   # גרסת Streamlit בלי בחירת תא: בחירה ידנית
-        r_i = st.selectbox("שורה", range(len(df)), format_func=lambda i: f"שורה {i + 1} · עמוד {export_rows[i][1].page}")
+        r_i = st.selectbox("שורה", list(view.index), format_func=lambda i: f"שורה {i + 1} · עמוד {export_rows[i][1].page}")
         c_i = st.selectbox("שדה", [c for c in df.columns if c != PAGE_COL])
-        selected = (r_i, c_i)
+        selected = (int(r_i), c_i)
+if selected and (selected[0] >= len(df) or selected[1] not in TITLES.values()):
+    selected = None
 
-with detail_col:
-    with st.container(border=True, key="detail_panel"):     # כותרת + ראיות בגלילה פנימית + פעולות שתמיד גלויות
-        if selected:
-            row_i, col_name = selected
-            key = next(k for k, t in COLUMNS if t == col_name)
-            page_res, er = export_rows[row_i]
-            render_detail(page_res, er, key, images.get(er.page))
-        else:
-            st.markdown("<div class='placeholder'><div class='ring'>↖</div><b>בחרי תא בטבלה</b>"
-                        "<p>יוצגו כאן האזור הסרוק, הדגלים והחלופות, עם אפשרות לאשר או להקליד ערך.</p></div>", unsafe_allow_html=True)
+# ---------- כרטיס הבדיקה: מתחת לטבלה, ברוחב מלא ----------
+if selected:
+    row_i, col_name = selected
+    key = next(k for k, t in COLUMNS if t == col_name)
+    page_res, er = export_rows[row_i]
+    order = list(view.index) if not view.empty else list(df.index)
+    nxt = next_attention_cell(colors, order, (row_i, col_name))
+    with st.container(key="detail_panel"):
+        render_detail(page_res, er, key, images.get(er.page), row_i, len(df), nxt, hidden=row_i not in view.index)
+    if st.session_state.pop("_scroll_to_detail", False):     # בחירה חדשה: גלילה עדינה אל כרטיס הבדיקה
+        st.html("<script>setTimeout(function(){var el=document.querySelector('.st-key-detail_panel');"
+                "if(el){el.scrollIntoView({behavior:'smooth',block:'start'});}},120);</script>", unsafe_allow_javascript=True)
+else:
+    first = next_attention_cell(colors, list(view.index), None) if not view.empty else None
+    tip, go = st.columns([5, 1.3], vertical_alignment="center")
+    tip.markdown("<div class='placeholder'><div class='ring'>↑</div><div><b>בחרי תא בטבלה</b>"
+                 "<span>כרטיס הבדיקה ייפתח כאן: האזור הסרוק, הדגלים, ההצעות וכפתורי האישור.</span></div></div>", unsafe_allow_html=True)
+    go.button("התחילי מהחריג הראשון", key="first_cell", on_click=_select, args=(first,), disabled=first is None, type="primary", width="stretch")
 
 with st.container(key="secondary"):                         # אזורים משניים: סגורים כברירת מחדל
     with st.expander("פירוט לפי שדה", expanded=False):
