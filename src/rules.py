@@ -468,6 +468,28 @@ def _receipt_reading(regions: dict | None, today: date) -> tuple[str | None, str
     return value, raw, [a for a in alts if a != value], f.get("source", "unknown")
 
 
+PRINTED_STAMP_KINDS = ("lab_stamp", "receipt_date", "sample_date")      # סוגים שמתקבלים כהדפסה ברורה (לא handwritten_date ולא other)
+PRINTED_STAMP_MIN_CONFIDENCE = 0.95
+
+
+def _clear_printed_stamp(dates: list[DateCandidate], value: str, flags: list[str], today: date) -> bool:
+    """הקריאה שנבחרה במעבר הראשון היא הדפסה ברורה, ולכן אין צורך בקריאה שנייה (date_single_source לא חל):
+    כל המועמדים ברמת העדיפות שנבחרה (חותמת, ואם אין: כתב יד, קבלה, דגימה) הם מקור printed, ביטחון לפחות
+    PRINTED_STAMP_MIN_CONFIDENCE, מסוג מ-PRINTED_STAMP_KINDS, וערכם הוא הערך שנבחר. סוג handwritten_date או other: לא.
+    ערך עם סתירה או פורמט לא חוקי מגיע לכאן בלי value, או עם הדגל invalid_format / conflict: לא."""
+    if F_CONFLICT in flags or F_INVALID_FORMAT in flags:
+        return False
+    for kind in ("lab_stamp", "handwritten_date", "receipt_date", "sample_date"):
+        pool = [c for c in dates if effective_date_kind(c) == kind]
+        if pool:
+            break
+    else:
+        return False
+    chosen = [c for c in pool if normalize_date(c.value, today).value == value]
+    return bool(chosen) and kind in PRINTED_STAMP_KINDS and all(
+        c.source == "printed" and c.confidence >= PRINTED_STAMP_MIN_CONFIDENCE for c in chosen)
+
+
 def decide_receipt_date(dates: list[DateCandidate], today: date | None = None, regions: dict | None = None,
                         require_two_readings: bool = False) -> Decision:
     """תאריך קבלה: ההחלטה מהמעבר הראשון (_decide_receipt_core), קריאה שנייה מחיתוך אזור הקבלה, וחלון תאריכים.
@@ -509,7 +531,7 @@ def decide_receipt_date(dates: list[DateCandidate], today: date | None = None, r
 
     if value and H_TWO_READS in hints:
         flags = [f for f in flags if f != F_HANDWRITTEN]
-    elif value and require_two_readings and F_DATE_SINGLE_SOURCE not in flags:
+    elif value and require_two_readings and F_DATE_SINGLE_SOURCE not in flags and not _clear_printed_stamp(dates, value, flags, today):
         flags.append(F_DATE_SINGLE_SOURCE)
     if value and window is not None and not inside(value):
         flags.append(F_DATE_OUTSIDE_WINDOW)

@@ -103,7 +103,12 @@ def test_single_reading_is_orange():
     assert d.value == "13.08.2026" and F_DATE_SINGLE_SOURCE in d.flags and F_HANDWRITTEN in d.flags
     printed = [dt("13.08.2026", "lab_stamp", evidence="stamp")]
     assert decide_receipt_date(printed, TODAY).flags == []                                # בלי הדרישה: כמו קודם
-    assert decide_receipt_date(printed, TODAY, require_two_readings=True).flags == [F_DATE_SINGLE_SOURCE]
+    assert decide_receipt_date(printed, TODAY, require_two_readings=True).flags == []     # הדפסה ברורה (printed, ביטחון 0.95): בלי דגל
+    weak = [dt("13.08.2026", "lab_stamp", evidence="stamp", conf=0.90)]
+    assert decide_receipt_date(weak, TODAY, require_two_readings=True).flags == [F_DATE_SINGLE_SOURCE]       # ביטחון נמוך: נשאר
+    for conf in (0.80, 0.99):                                                                                # כתב יד: נשאר, בכל ביטחון
+        hand = [dt("13.08.2026", "handwritten_date", source="handwritten", conf=conf)]
+        assert F_DATE_SINGLE_SOURCE in decide_receipt_date(hand, TODAY, require_two_readings=True).flags
 
 
 def test_two_readings_agree_but_outside_window_is_orange():
