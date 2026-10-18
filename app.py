@@ -69,6 +69,7 @@ FLAG_HE = {
     "model_says_not_commitment_form": "המודל סימן: לא טופס התחייבות",
     "rotation_unresolved": "הסיבוב לא נפתר",
     "center_from_barcode_only": "המרכזי נקרא מהברקוד בלבד (המודל לא מצא), לבדיקה",
+    "center_barcode_extra": "הברקוד מכיל מרכזיים נוספים שהמודל לא קרא, לבדיקה",
 }
 
 

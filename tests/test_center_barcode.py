@@ -73,9 +73,27 @@ def test_a_multi_value_with_center_mismatch_is_not_cleared_by_the_barcode():
 def test_a_requires_equality_not_containment():
     d = Decision(value="111111", raw="111111", flags=["no_center_label"])
     out = apply_center_barcode(d, BC("111111", "222222"))       # המודל קרא רק אחד מתוך שניים
-    assert out.value == "111111" and out.flags == ["no_center_label"]
+    assert out.value == "111111" and out.flags == ["no_center_label", "center_barcode_extra"]
     assert not any(h == "center_barcode_agrees" for h in out.hints)
     assert out.hints == ["center_barcode_differs:111111 ; 222222"]
+
+
+def test_c_model_subset_of_barcode_values_is_orange_not_green():
+    """רגרסיה חלק 1 עמוד 9: חיתוך הקבלה קרא מרכזי אחד (937309, ביטחון 0.9, בלי דגל) והברקוד פענח עוד ערכים: התא חייב להיות כתום."""
+    d = Decision(value="937309", raw="937309", flags=[], alternatives=["937310", "937311"])
+    out = apply_center_barcode(d, BC("937309", "937310", "937311"))
+    assert out.value == "937309" and out.flags == ["center_barcode_extra"]          # הערך לא משתנה, רק נהיה כתום
+    assert out.hints == ["center_barcode_differs:937309 ; 937310 ; 937311"]
+
+
+def test_c_end_to_end_receipt_crop_single_value_with_extra_barcodes_is_orange():
+    from src.rules import decide_center
+    regions = {"ok": True, "model": "m", "patient": {"region_ok": False}, "barcode": {"region_ok": False, "numbers": [],
+               "central_number": {"value": None}}, "receipt": {"region_ok": True, "date": {"value": None},
+               "central_number": {"value": "937309", "confidence": 0.9, "label": "מרכזי", "source": "printed", "alternatives": ["937310", "937311"]}},
+               "commitment": {"region_ok": False}}
+    out = decide_center([], regions, BC("937309", "937310", "937311"))
+    assert out.value == "937309" and "center_barcode_extra" in out.flags and out.uncertain
 
 
 def test_b_empty_model_takes_barcode_values_orange():
@@ -174,7 +192,7 @@ def test_barcode_equal_to_commitment_number_is_not_counted_as_center(monkeypatch
     with_ranges(monkeypatch, barcode_match=(5, 9))
     d = Decision(value="111111", raw="111111", flags=["center_mismatch"])
     # בלי הוצאה: הברקוד השני (מספר התחייבות) מונע שוויון; עם הוצאה: שוויון, ירוק
-    assert apply_center_barcode(d, BC("111111", "944000351")).flags == ["center_mismatch"]
+    assert apply_center_barcode(d, BC("111111", "944000351")).flags == ["center_mismatch", "center_barcode_extra"]
     out = apply_center_barcode(d, BC("111111", "944000351"), exclude={"944000351"})
     assert out.flags == [] and "center_barcode_agrees" in out.hints
     assert apply_center_barcode(Decision(), BC("944000351"), exclude={"944000351"}).value is None

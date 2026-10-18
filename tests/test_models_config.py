@@ -1,4 +1,4 @@
-"""config/models.json: מעבר 1 flash-lite, מעבר 2 gemini-3.8-flash עם גיבוי flash-lite; הסלמה למודל חזק רק לפי ההגדרה, וחזרה שקטה כשהוא לא עונה."""
+"""config/models.json: מעבר 1 flash-lite, מעבר 2 gemini-3.6-flash (3.8 עמוס בשרת) עם גיבוי flash-lite; הסלמה למודל חזק רק לפי ההגדרה, וחזרה שקטה כשהוא לא עונה."""
 import json
 
 from src import extractor
@@ -9,12 +9,12 @@ from tests.test_retries import BUSY, FakeClient
 OK = RegionsExtraction().model_dump_json()
 
 
-def test_shipped_config_pass1_flash_lite_pass2_38_with_flash_lite_fallback_without_escalation():
+def test_shipped_config_pass1_flash_lite_pass2_36_with_flash_lite_fallback_without_escalation():
     cfg = json.loads(extractor.MODELS_CONFIG_PATH.read_text(encoding="utf-8"))
-    assert cfg["first_pass"] == "gemini-3.5-flash-lite" and cfg["second_pass"] == "gemini-3.8-flash"
+    assert cfg["first_pass"] == "gemini-3.5-flash-lite" and cfg["second_pass"] == "gemini-3.6-flash"
     assert cfg["second_pass_fallback"] == "gemini-3.5-flash-lite" and cfg["escalate_to_strong"] is False
     assert extractor.model_chain()[0] == "gemini-3.5-flash-lite"
-    assert extractor.region_model_chain() == ["gemini-3.8-flash", "gemini-3.5-flash-lite"]
+    assert extractor.region_model_chain() == ["gemini-3.6-flash", "gemini-3.5-flash-lite"]
     assert "gemini-3.5-flash-lite" not in extractor.strong_model_list()
 
 

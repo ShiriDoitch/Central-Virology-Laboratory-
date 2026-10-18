@@ -269,12 +269,12 @@ def _client(monkeypatch, outcomes):
     return client
 
 
-def test_shipped_config_pass2_is_38_with_flash_lite_fallback_pass1_unchanged():
+def test_shipped_config_pass2_is_36_with_flash_lite_fallback_pass1_unchanged():
     cfg = json.loads(extractor.MODELS_CONFIG_PATH.read_text(encoding="utf-8"))
     assert cfg["first_pass"] == "gemini-3.5-flash-lite"
     assert extractor.model_chain() == ["gemini-3.5-flash-lite", "gemini-3.1-flash-lite"]       # מעבר 1 לא השתנה
-    assert extractor.region_model_chain() == ["gemini-3.8-flash", "gemini-3.5-flash-lite"]
-    assert "gemini-3.8-flash" in extractor.strong_model_list()                                 # דרגת מכסה חזקה (20 ליום)
+    assert extractor.region_model_chain() == ["gemini-3.6-flash", "gemini-3.5-flash-lite"]
+    assert "gemini-3.6-flash" in extractor.strong_model_list()                                 # דרגת מכסה חזקה (20 ליום)
 
 
 def test_pass2_uses_strong_model_and_records_it(monkeypatch, two_models):

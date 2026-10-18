@@ -43,6 +43,7 @@ F_COMMITMENT_MISMATCH = "commitment_mismatch"
 F_COMMITMENT_SINGLE_SOURCE = "commitment_single_source"
 F_MODEL_NOT_FORM ="model_says_not_commitment_form"
 F_CENTER_FROM_BARCODE_ONLY = "center_from_barcode_only"
+F_CENTER_BARCODE_EXTRA = "center_barcode_extra"   # ערכי המודל הם תת-קבוצה אמיתית של ערכי הברקוד: יש ברקוד שהמודל לא קרא, כתום
 F_DATE_OUTSIDE_WINDOW = "date_outside_window"    # תאריך קבלה מחוץ לחלון [תאריך דגימה, שליחה/דגימה + 14 יום, לא בעתיד, לא אחרי תוקף]
 F_DATE_SINGLE_SOURCE = "date_single_source"      # תאריך שנקרא פעם אחת בלבד (בלי קריאה שנייה מחיתוך אזור הקבלה): כתום
 F_ID_CHECKSUM_FAILED = "id_checksum_failed"      # ספרת ביקורת נכשלה: תמיד כתום (הערך לא נפסל ולא משתנה)
@@ -769,7 +770,8 @@ def apply_center_barcode(d: Decision, barcodes: list[dict] | None, exclude: set[
     """קורא שני בלתי תלוי למרכזי: ברקודי Code128 באורך מרכזי שפוענחו מקומית (src/barcode.py). רק המרכזי.
     (א) ערכי המודל שווים בדיוק לקבוצת הברקודים (לא רק מוכלים בה): ירוק, בלי דגלים (רמז center_barcode_agrees).
     (ב) המודל לא החליט על ערך אבל יש ברקודים: הערכים מהברקוד, מחוברים ב-" ; ", כתום (center_from_barcode_only).
-    (ג) שונים: ההחלטה הנוכחית ללא שינוי (רק רמז לביקורת). (ד) אין ברקוד: ללא שינוי.
+    (ג) שונים: ההחלטה הנוכחית ללא שינוי (רמז לביקורת center_barcode_differs); חריג: ערכי המודל תת-קבוצה אמיתית של ערכי הברקוד
+    (הברקוד מצא עוד ערכים) = גם דגל center_barcode_extra, כתום. (ד) אין ברקוד: ללא שינוי.
     exclude = ערכים שאינם מרכזי (מספרי ההתחייבות שהמודל מצא בעמוד): לא נספרים מהברקודים."""
     from .barcode import center_barcode_values
 
@@ -787,7 +789,10 @@ def apply_center_barcode(d: Decision, barcodes: list[dict] | None, exclude: set[
         # הסכמה עם הברקוד מאשרת קריאה, לא תפקיד: כשכמה מספרים בלי תווית מתחרים (center_mismatch) והברקוד מכיל את אותם מספרים
         # (למשל גם את מספר ההתחייבות), אין ראיה למי מהם המרכזי, והדגל נשאר
         return d.model_copy(update={"flags": [], "alternatives": [], "hints": _dedupe([*d.hints, H_CENTER_BARCODE_AGREES])})
-    return d.model_copy(update={"hints": _dedupe([*d.hints, f"center_barcode_differs:{join_multi(values)}"])})
+    update = {"hints": _dedupe([*d.hints, f"center_barcode_differs:{join_multi(values)}"])}
+    if set(model) < set(values):      # הברקוד מכיל ערכים נוספים מעבר למה שהמודל בחר (למשל חיתוך קבלה שקרא מרכזי אחד מתוך כמה)
+        update["flags"] = _dedupe([*d.flags, F_CENTER_BARCODE_EXTRA])
+    return d.model_copy(update=update)
 
 
 def _barcode_numbers(regions: dict | None) -> tuple[list[NumberCandidate], list[tuple[str, Field_]]]:
