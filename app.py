@@ -14,6 +14,7 @@ from src.export import COLUMNS, CONFIRMED, FIELD_KEYS, GREEN, ORANGE, YELLOW, _r
 from src.intake import pdf_to_images, rotate_jpeg
 from src.schema import PageExtraction
 from src.privacy import GENERIC_ERROR_HE, log_server_error
+from src.review import filter_counts, next_attention_cell, row_masks, visible_rows
 from src.upload import UploadRejected, cleanup_stale_uploads, process_upload, to_pdf_bytes  # noqa: F401  (to_pdf_bytes: לשימוש חיצוני / בדיקות)
 
 SAMPLE_DIR = Path("outputs/clean_part1_v4b")      # הריצה השמורה (בלי API)
@@ -27,11 +28,10 @@ YELLOW_HEX = "#" + YELLOW.fgColor.rgb[-6:]            # ערך בכתב יד, ש
 # בטבלה: ירוק = טקסט ירוק בלבד (המצב התקין, בלי רעש); כתום / זהב / כחול = "תג" עדין: טקסט כהה על רקע בהיר באותו גוון.
 UI_TONE = {GREEN_HEX: "#2E7D4F", ORANGE_HEX: "#8A561A", YELLOW_HEX: "#6B5D1C", CONFIRMED_HEX: "#2F5E8E"}
 UI_FILL = {ORANGE_HEX: "#FBEFDF", YELLOW_HEX: "#F4EDD3", CONFIRMED_HEX: "#E6EEF8"}
-UI_DOT = {"green": "#2E7D4F", "orange": "#C27A2C", "yellow": "#A8932F", "confirmed": "#3F6FA0", "neutral": "#2D5F6B", "empty": "#A3A39A"}
+UI_DOT = {"green": "#2E7D4F", "orange": "#B06A1E", "yellow": "#8A7A22", "confirmed": "#2F5E8E", "ink": "#1C2321", "empty": "#7A7F7A"}   # צבע המספר בפס המדדים
 TABLE_H = 520                                        # גובה מרבי של הטבלה ברוחב מלא (גלילה פנימית); כרטיס הבדיקה נפתח מתחתיה
-ATTENTION = (ORANGE_HEX, YELLOW_HEX, "")             # סטטוסים שדורשים עין אנושית: כתום, צהוב, ריק
-# סינון מהיר: מפתח -> תווית. "תקין" = שורה בלי אף שדה לבדיקה (ירוק או מאושר בלבד)
-FILTERS = {"all": "הכול", "green": "🟢 תקין", "orange": "🟠 לבדיקה", "yellow": "🟡 זהב", "empty": "⚪ ריק"}
+# סינון מהיר: מפתח -> תווית. "תקין" = שורה בלי אף שדה לבדיקה (ירוק או מאושר בלבד); הלוגיקה ב-src/review.py
+FILTERS = {"all": "הכול", "green": "תקין", "orange": "לבדיקה", "yellow": "זהב", "empty": "ריק"}     # הצבע בא מרקע הכפתור, בלי אייקונים
 FOCUS_LABEL = "מצב פוקוס לבורנטית (הצג חריגים בלבד)"
 ROW_H = 40                                           # גובה שורה בטבלה: מרווח נוח לקריאה
 # רוחב מינימלי לעמודה בפיקסלים. הרשת מחלקת את הרוחב הפנוי באופן יחסי, ולכן הסכום (כ-720) קטן מרוחב הטבלה גם במסך מחשב נייד:
@@ -114,29 +114,26 @@ st.markdown(
     .stApp {background: var(--canvas);}
     code {font-family: 'IBM Plex Mono', monospace !important; direction: ltr; unicode-bidi: embed; background: var(--wash); color: var(--ink);
           border-radius: 4px; padding: 1px 6px; font-size: 0.9em;}
-    .block-container {max-width: 1560px; padding: 1.6rem 2rem 3rem;}
-    [data-testid="stVerticalBlock"] {gap: 0.75rem;}
+    .block-container {max-width: 1560px; padding: 1.1rem 2rem 3rem;}
+    [data-testid="stVerticalBlock"] {gap: 0.6rem;}
     [data-testid="stHeading"], [data-testid="stHeading"] *, h1, h2, h3, h4, h5, [data-testid="stCaptionContainer"], [data-testid="stCaptionContainer"] *,
     [data-testid="stMarkdownContainer"], [data-testid="stMarkdownContainer"] p {direction: rtl; text-align: right;}
     [data-testid="stCaptionContainer"] {color: var(--ink-3);}
     [data-testid="stToolbar"], [data-testid="stDeployButton"], .stDeployButton, #MainMenu, footer, header[data-testid="stHeader"] {display: none !important;}
 
-    /* ---------- כותרת הדף: מיושרת לימין, קו הדגשה אנכי + קו מפריד דק ---------- */
-    .lab-header {display: flex; align-items: flex-end; justify-content: space-between; gap: 24px; padding: 0 0 12px; border-bottom: 1px solid var(--line-2); margin-bottom: 4px;}
-    .lab-header .brand {border-right: 4px solid var(--accent); padding-right: 14px;}
-    .lab-header .eyebrow {font-size: 0.8rem; font-weight: 600; letter-spacing: 0.02em; color: var(--accent); margin-bottom: 2px;}
-    .lab-header .title {font-size: 1.75rem; font-weight: 700; color: var(--ink); line-height: 1.2;}
-    .lab-header .subtitle {font-size: 0.88rem; color: var(--ink-3); margin-top: 4px;}
-    .lab-header .tag {flex: none; font-size: 0.78rem; color: var(--accent-ink); background: var(--accent-soft); border: 1px solid #CFDFE1; border-radius: 999px; padding: 3px 12px;}
+    /* ---------- כותרת: שורה אחת, קו הדגשה דק מימין ---------- */
+    .lab-header {display: flex; align-items: baseline; gap: 12px; flex-wrap: wrap; border-right: 3px solid var(--accent); padding: 0 12px 0 0; margin: 0 0 8px;}
+    .lab-header .title {font-size: 1.32rem; font-weight: 700; color: var(--ink); line-height: 1.25;}
+    .lab-header .org {font-size: 0.86rem; font-weight: 500; color: var(--accent);}
+    .lab-header .hint {font-size: 0.8rem; color: var(--ink-3); margin-inline-start: auto;}
 
-    /* ---------- כרטיס הפעולה: קומפקטי, כל הפקדים באותו גובה, נדבק לראש המסך בגלילה ---------- */
-    .st-key-action_card {position: sticky; top: 0.5rem; z-index: 100; background: var(--paper) !important; border: 1px solid var(--line) !important;
-          border-radius: var(--radius) !important; padding: 0.55rem 0.9rem 0.65rem !important; box-shadow: var(--shadow);}
-    .st-key-action_card [data-testid="stFileUploader"] label p {font-size: 0.8rem; font-weight: 500; color: var(--ink-2);}
-    .st-key-action_card [data-testid="stFileUploader"] label {margin-bottom: 2px; min-height: 0;}
-    .st-key-action_card [data-testid="stFileUploaderDropzone"] {padding: 0.35rem 0.75rem; min-height: 44px;}
-    .st-key-action_card .stButton > button, .st-key-action_card .stDownloadButton > button {height: 44px; min-height: 44px;}
-    .st-key-action_card [data-testid="stFileUploaderFile"] {margin-top: 4px;}
+    /* ---------- סרגל הפעולה: שורה אחת נמוכה, כל הפקדים בגובה 40, נדבק לראש המסך בגלילה ---------- */
+    .st-key-action_card {position: sticky; top: 0.4rem; z-index: 100; background: var(--paper) !important; border: 1px solid var(--line) !important;
+          border-radius: var(--radius) !important; padding: 0.45rem 0.6rem !important; box-shadow: var(--shadow);}
+    .st-key-action_card [data-testid="stFileUploaderDropzone"] {padding: 0 0.6rem; min-height: 40px; height: 40px;}
+    .st-key-action_card [data-testid="stFileUploaderDropzone"] button {min-height: 30px; height: 30px; padding: 0 12px;}
+    .st-key-action_card .stButton > button, .st-key-action_card .stDownloadButton > button {height: 40px; min-height: 40px;}
+    .st-key-action_card [data-testid="stFileUploaderFile"] {margin-top: 2px;}
 
     /* ---------- כפתורים והעלאה בצבעי הנושא ---------- */
     .stButton > button, .stDownloadButton > button {border-radius: 8px; font-weight: 500; border: 1px solid var(--line-2); background: var(--paper); color: var(--ink); transition: border-color .15s, background .15s;}
@@ -152,32 +149,37 @@ st.markdown(
     [data-testid="stAlert"] {border-radius: 8px;}
     [data-testid="stAlert"] [data-testid="stMarkdownContainer"] p {font-size: 0.9rem;}
 
-    /* ---------- מדדי סיכום: שורה אחת, כרטיסים שווים, פס צבע עליון לפי הסטטוס ---------- */
-    .kpis {display: grid; grid-template-columns: repeat(7, minmax(0, 1fr)); gap: 12px; margin: 2px 0 2px;}
-    .kpi {position: relative; background: var(--paper); border: 1px solid var(--line); border-radius: var(--radius); padding: 12px 14px 10px; box-shadow: var(--shadow); overflow: hidden; min-width: 0;}
-    .kpi::before {content: ""; position: absolute; inset: 0 0 auto 0; height: 3px; background: var(--tone);}
-    .kpi .k-label {display: flex; align-items: center; gap: 7px; font-size: 0.8rem; font-weight: 500; color: var(--ink-2); line-height: 1.3; min-height: 2.1em;}
-    .kpi .k-label i {flex: none; width: 8px; height: 8px; border-radius: 50%; background: var(--tone);}
-    .kpi .k-value {font-size: 1.55rem; font-weight: 600; color: var(--ink); line-height: 1.15; margin-top: 4px; white-space: nowrap; font-variant-numeric: tabular-nums;}
-    .kpi .k-value small {font-size: 0.85rem; font-weight: 500; color: var(--ink-3); margin-right: 4px;}
-    .kpi .k-note {font-size: 0.74rem; color: var(--ink-3); margin-top: 2px; white-space: nowrap; overflow: hidden; text-overflow: ellipsis;}
-    @media (max-width: 1100px) {.kpis {grid-template-columns: repeat(4, minmax(0, 1fr));}}
-    @media (max-width: 640px) {.kpis {grid-template-columns: repeat(2, minmax(0, 1fr));}}
+    /* ---------- מדדים: פס אחד, תאים מופרדים בקו דק, בלי נקודות ובלי הערות (בטולטיפ) ---------- */
+    .kpis {display: grid; grid-template-columns: repeat(7, minmax(0, 1fr)); background: var(--paper); border: 1px solid var(--line);
+           border-radius: var(--radius); box-shadow: var(--shadow); overflow: hidden; margin: 2px 0 6px;}
+    .kpi {padding: 8px 16px 9px; min-width: 0; border-left: 1px solid var(--line); cursor: default;}
+    .kpi:last-child {border-left: none;}
+    .kpi .k-label {font-size: 0.74rem; font-weight: 500; color: var(--ink-3); white-space: nowrap; overflow: hidden; text-overflow: ellipsis;}
+    .kpi .k-value {font-size: 1.28rem; font-weight: 600; color: var(--tone); line-height: 1.2; white-space: nowrap; font-variant-numeric: tabular-nums;}
+    .kpi .k-value small {font-size: 0.8rem; font-weight: 500; color: var(--ink-3); margin-right: 3px;}
+    @media (max-width: 1100px) {.kpis {grid-template-columns: repeat(4, minmax(0, 1fr));} .kpi {border-bottom: 1px solid var(--line);}}
 
-    /* ---------- סרגל אזור העבודה: כותרת + מקרא, מעל הטבלה והפאנל ---------- */
-    .ws-title {font-size: 1.12rem; font-weight: 600; color: var(--ink); padding-top: 6px;}
-    .ws-title span {font-size: 0.82rem; font-weight: 400; color: var(--ink-3); margin-right: 10px;}
-    .st-key-toolbar {background: var(--paper) !important; border: 1px solid var(--line) !important; border-radius: var(--radius) !important; box-shadow: var(--shadow); padding: 0.6rem 1rem 0.7rem !important;}
-    .st-key-toolbar [data-testid="stButtonGroup"] button {border-radius: 999px !important; padding: 0.25rem 0.9rem; font-size: 0.86rem;}
-    .st-key-toolbar [data-testid="stButtonGroup"] > div {gap: 6px; flex-wrap: wrap;}
-    .st-key-toolbar [data-testid="stWidgetLabel"] p {font-size: 0.78rem; font-weight: 600; color: var(--ink-2);}
-    .st-key-focus_wrap {background: var(--accent-soft); border: 1px solid #CFDFE1; border-radius: 999px; padding: 6px 14px 6px 10px !important; width: fit-content; margin-inline-start: auto;}
-    .st-key-focus_wrap [data-testid="stWidgetLabel"] p, .st-key-focus_wrap label p {font-size: 0.9rem !important; font-weight: 600 !important; color: var(--accent-ink) !important;}
-    .filter-note {font-size: 0.82rem; color: var(--ink-3); margin-top: 2px;}
-    .filter-note b {color: var(--accent-ink); font-weight: 600;}
-    .legend {display: flex; flex-wrap: wrap; gap: 6px 18px; font-size: 0.8rem; color: var(--ink-2);}
-    .legend span {display: inline-flex; align-items: center; gap: 7px;}
-    .sw {display: inline-block; width: 22px; height: 14px; border-radius: 4px; border: 1px solid; flex: none; font-size: 9px; line-height: 12px; text-align: center; font-weight: 600;}
+    /* ---------- סרגל הסינון: שורה אחת, כפתורים במילוי רך לפי הסטטוס, מונה, ומתג פוקוס ---------- */
+    .st-key-toolbar {background: var(--paper) !important; border: 1px solid var(--line) !important; border-radius: var(--radius) !important;
+          box-shadow: var(--shadow); padding: 0.5rem 0.8rem !important;}
+    .st-key-status_filter [role="radiogroup"] {gap: 6px; flex-wrap: wrap;}
+    .st-key-status_filter button {--chip-bg: #F2F0EA; --chip-ink: var(--ink-2); --chip-on: var(--accent);
+          border: 1px solid transparent !important; border-radius: 999px !important; background: var(--chip-bg) !important; color: var(--chip-ink) !important;
+          padding: 0.3rem 0.95rem !important; min-height: 2.1rem; box-shadow: none !important; transition: background .15s, color .15s;}
+    .st-key-status_filter button p {color: inherit !important; font-size: 0.86rem; white-space: nowrap;}
+    .st-key-status_filter button p strong {font-weight: 700; opacity: .8;}
+    .st-key-status_filter button:nth-of-type(2) {--chip-bg: #EAF4EE; --chip-ink: #2E7D4F; --chip-on: #2E7D4F;}
+    .st-key-status_filter button:nth-of-type(3) {--chip-bg: #FBEFDF; --chip-ink: #8A561A; --chip-on: #B06A1E;}
+    .st-key-status_filter button:nth-of-type(4) {--chip-bg: #F4EDD3; --chip-ink: #6B5D1C; --chip-on: #8A7A22;}
+    .st-key-status_filter button:nth-of-type(5) {--chip-bg: #FFFFFF; --chip-ink: #6B7470; --chip-on: #6B7470; border: 1px dashed #CFCBBF !important;}
+    .st-key-status_filter button:hover {filter: brightness(0.97);}
+    .st-key-status_filter button[data-selected="true"] {background: var(--chip-on) !important; color: #FFFFFF !important; border-color: var(--chip-on) !important;}
+    .st-key-status_filter button[data-selected="true"] p strong {opacity: 1;}
+    .counter {font-size: 0.84rem; color: var(--ink-2); white-space: nowrap; text-align: center !important;}
+    .counter b {font-weight: 700; color: var(--ink);}
+    .counter span {display: block; font-size: 0.74rem; color: var(--ink-3);}
+    .st-key-focus_wrap {background: var(--accent-soft); border: 1px solid #CFDFE1; border-radius: 999px; padding: 5px 14px !important; width: fit-content; margin-inline-start: auto;}
+    .st-key-focus_wrap label p {font-size: 0.86rem !important; font-weight: 600 !important; color: var(--accent-ink) !important; white-space: nowrap;}
 
     /* ---------- הטבלה ---------- */
     [data-testid="stDataFrame"] {border: 1px solid var(--line); border-radius: var(--radius); background: var(--paper); box-shadow: var(--shadow); overflow: hidden;}
@@ -190,8 +192,7 @@ st.markdown(
     .panel-head {display: flex; align-items: center; gap: 14px; flex-wrap: wrap;}
     .panel-head .ph-eyebrow {font-size: 0.78rem; color: var(--ink-3);}
     .panel-head .ph-title {font-size: 1.25rem; font-weight: 600; color: var(--ink); line-height: 1.3;}
-    .badge {flex: none; display: inline-flex; align-items: center; gap: 6px; font-size: 0.78rem; font-weight: 500; padding: 3px 11px; border-radius: 999px; border: 1px solid;}
-    .badge::before {content: ""; width: 7px; height: 7px; border-radius: 50%; background: currentColor;}
+    .badge {flex: none; display: inline-flex; align-items: center; font-size: 0.78rem; font-weight: 500; padding: 3px 11px; border-radius: 999px; border: 1px solid;}
     .badge.green {color: #2E7D4F; background: #EAF4EE; border-color: #CFE5D7;}
     .badge.orange {color: #8A561A; background: #FBEFDF; border-color: #F0D9B8;}
     .badge.yellow {color: #6B5D1C; background: #F4EDD3; border-color: #E4D8A8;}
@@ -214,11 +215,9 @@ st.markdown(
     .st-key-detail_evidence [data-testid="stMarkdownContainer"] p {line-height: 1.7;}
     .st-key-detail_panel [data-testid="stExpander"] {border: 1px solid var(--line); border-radius: 8px; background: var(--paper);}
     .st-key-detail_panel [data-testid="stExpander"] summary p {font-size: 0.85rem;}
-    .placeholder {display: flex; align-items: center; justify-content: center; gap: 14px; text-align: right; padding: 18px 22px; color: var(--ink-3);
-          background: var(--paper); border: 1px dashed var(--line-2); border-radius: var(--radius);}
-    .placeholder .ring {flex: none; width: 36px; height: 36px; border-radius: 10px; background: var(--accent-soft); display: grid; place-items: center; color: var(--accent); font-size: 17px;}
-    .placeholder b {display: block; color: var(--ink); font-weight: 600; font-size: 0.95rem;}
-    .placeholder span {font-size: 0.85rem;}
+    .placeholder {display: flex; align-items: baseline; gap: 10px; padding: 11px 16px; margin-bottom: 6px; color: var(--ink-3);
+          background: var(--paper); border: 1px dashed var(--line-2); border-radius: var(--radius); font-size: 0.86rem;}
+    .placeholder b {color: var(--ink); font-weight: 600; font-size: 0.9rem;}
     .empty-filter {background: var(--paper); border: 1px solid var(--line); border-radius: var(--radius); padding: 28px; text-align: center; color: var(--ink-3);}
     .empty-filter b {display: block; color: #2E7D4F; font-size: 1rem; margin-bottom: 4px;}
     /* דגלים בפירוט: תגיות ענבר עדינות */
@@ -391,35 +390,7 @@ def cell_status(cell) -> tuple[str, str]:
     return "empty", "לא נמצא"
 
 
-# ---------- סינון ובחירה ----------
-
-def row_masks(colors: pd.DataFrame) -> dict[str, pd.Series]:
-    """לכל מסנן מהיר: אילו שורות מוצגות. שורה "דורשת תשומת לב" אם יש בה שדה כתום, צהוב או ריק (מאושר = טופל)."""
-    fc = colors[[TITLES[k] for k in FIELD_KEYS]]
-    has = {name: (fc == hexv).any(axis=1) for name, hexv in (("orange", ORANGE_HEX), ("yellow", YELLOW_HEX), ("empty", ""))}
-    attention = has["orange"] | has["yellow"] | has["empty"]
-    return {"all": pd.Series(True, index=colors.index), "green": ~attention, **has, "attention": attention}
-
-
-def visible_rows(colors: pd.DataFrame, status_filter: str, focus: bool) -> pd.Series:
-    masks = row_masks(colors)
-    mask = masks.get(status_filter, masks["all"])
-    return mask & masks["attention"] if focus else mask
-
-
-def next_attention_cell(colors: pd.DataFrame, rows, current) -> tuple[int, str] | None:
-    """התא הבא שדורש בדיקה (כתום / צהוב / ריק) אחרי התא הנוכחי, בסדר הקריאה (שורה, ואז שדה מימין לשמאל), עם חזרה להתחלה."""
-    titles = [TITLES[k] for k in FIELD_KEYS]
-    cells = [(int(r), t) for r in rows for t in titles if colors.at[r, t] in ATTENTION]
-    if not cells:
-        return None
-    if current is None:
-        return cells[0]
-    pos = lambda c: (c[0], titles.index(c[1]) if c[1] in titles else -1)
-    later = [c for c in cells if pos(c) > pos(current)]
-    nxt = later[0] if later else cells[0]
-    return None if nxt == tuple(current) else nxt
-
+# ---------- בחירה (הסינון עצמו ב-src/review.py) ----------
 
 def _select(cell) -> None:
     st.session_state["selected_cell"] = tuple(cell) if cell else None
@@ -523,12 +494,12 @@ def render_detail(page_res: dict, er, key: str, image: bytes | None, row_i: int,
 
 
 def kpi_cards(items) -> str:
-    """שורת מדדים כ-HTML: (תווית, ערך, הערה, צבע, הסבר). רק מספרים וטקסט קבוע."""
+    """פס מדדים אחד, קומפקטי: (תווית, ערך, הערה, צבע, הסבר). ההערה וההסבר בטולטיפ. רק מספרים וטקסט קבוע."""
     out = []
     for label, value, note, tone, tip in items:
-        out.append(f"<div class='kpi' style='--tone:{tone}' title='{html.escape(tip or label, quote=True)}'>"
-                   f"<div class='k-label'><i></i>{html.escape(label)}</div><div class='k-value'>{value}</div>"
-                   f"<div class='k-note'>{html.escape(note)}</div></div>")
+        title = html.escape(" · ".join(x for x in (tip or label, note) if x), quote=True)
+        out.append(f"<div class='kpi' style='--tone:{tone}' title='{title}'><div class='k-label'>{html.escape(label)}</div>"
+                   f"<div class='k-value'>{value}</div></div>")
     return "<div class='kpis'>" + "".join(out) + "</div>"
 
 
@@ -536,31 +507,19 @@ def share(n: int, total: int) -> str:
     return f"{round(100 * n / total)}% מהשדות" if total else "—"
 
 
-LEGEND_HTML = (
-    "<div class='legend'>"
-    f"<span><i class='sw' style='color:{UI_TONE[GREEN_HEX]};border-color:#CFE5D7;background:#fff'>א</i>ירוק: בלי דגל</span>"
-    f"<span><i class='sw' style='color:{UI_TONE[ORANGE_HEX]};border-color:#F0D9B8;background:{UI_FILL[ORANGE_HEX]}'>א</i>כתום: לבדיקה</span>"
-    f"<span title='{YELLOW_TEXT}'><i class='sw' style='color:{UI_TONE[YELLOW_HEX]};border-color:#E4D8A8;background:{UI_FILL[YELLOW_HEX]}'>א</i>"
-    "זהב: שתי קריאות מסכימות (ת\"ז, שם)</span>"
-    f"<span><i class='sw' style='color:{UI_TONE[CONFIRMED_HEX]};border-color:#C9D9EC;background:{UI_FILL[CONFIRMED_HEX]}'>א</i>כחול: אושר על ידי המשתמש</span>"
-    "<span><i class='sw' style='border-color:#D4D0C4;border-style:dashed;background:#fff'></i>ריק: לא נמצא</span></div>"
-)
-
-
 # ---------- דף ----------
 
 st.markdown(
-    "<div class='lab-header'><div class='brand'><div class='eyebrow'>המעבדה המרכזית לנגיפים</div>"
-    "<div class='title'>חילוץ טפסי התחייבות</div>"
-    "<div class='subtitle'>שורה אחת לכל התחייבות · שדה כתום = לא בטוח, לבדיקה אנושית</div></div>"
-    "<span class='tag'>בדיקה אנושית לפני ייצוא</span></div>",
+    "<div class='lab-header'><div class='title'>חילוץ טפסי התחייבות</div>"
+    "<div class='org'>המעבדה המרכזית לנגיפים</div>"
+    "<div class='hint'>שורה אחת לכל התחייבות · כתום = לבדיקה אנושית</div></div>",
     unsafe_allow_html=True,
 )
 
 with st.container(border=True, key="action_card"):         # כרטיס פעולה אחד: העלאה, עיבוד, דוגמה והורדת אקסל (נדבק לראש המסך בגלילה)
-    up_col, run_col, sample_col, dl_col = st.columns([4.2, 1.1, 1.5, 1.3], vertical_alignment="bottom", gap="small")
+    up_col, run_col, sample_col, dl_col = st.columns([4.4, 1, 1.4, 1.2], vertical_alignment="center", gap="small")
     with up_col:
-        upload = st.file_uploader("העלאת טופס (PDF או תמונה)", type=["pdf", "png", "jpg", "jpeg"])
+        upload = st.file_uploader("העלאת טופס (PDF או תמונה)", type=["pdf", "png", "jpg", "jpeg"], label_visibility="collapsed")
     run_clicked = run_col.button("עבד", type="primary", disabled=upload is None, width="stretch")
     sample_clicked = sample_col.button("טען דוגמה מחלק 1", width="stretch")
     download_slot = dl_col.empty()
@@ -612,13 +571,13 @@ n_empty = fields - n_green - n_orange - n_confirmed - n_yellow
 
 orange_ok, orange_total = orange_correct(pages) if st.session_state.get("is_sample") else (0, 0)
 st.markdown(kpi_cards([                                     # סדר מימין לשמאל: כמות, ואז מהבטוח אל מה שדורש עבודה
-    ("טפסים (התחייבויות)", str(len(df)), f"{fields} שדות · {len(skipped)} עמודים דולגו", UI_DOT["neutral"], None),
+    ("טפסים", str(len(df)), f"{fields} שדות · {len(skipped)} עמודים דולגו", UI_DOT["ink"], "התחייבויות (שורות בטבלה)"),
     ("שדות ירוקים", str(n_green), share(n_green, fields), UI_DOT["green"], "נקרא בלי דגל"),
     ("שדות צהובים", str(n_yellow), share(n_yellow, fields), UI_DOT["yellow"], YELLOW_TEXT),
     ("שדות כתומים", str(n_orange), share(n_orange, fields), UI_DOT["orange"], "כולל שדה ריק שסומן לבדיקה"),
     ("שדות ריקים", str(n_empty), "לא נמצא, בלי דגל", UI_DOT["empty"], "לא נמצא, בלי דגל"),
-    ("אושרו על ידי המשתמש", str(n_confirmed), "מיוצא באקסל בכחול", UI_DOT["confirmed"], "ערך שהוקלד או נבחר ידנית; מיוצא באקסל בכחול"),
-    ("מהכתומים, כמה נכונים", f"{orange_ok}<small>מתוך {orange_total}</small>" if orange_total else "—",
+    ("אושרו ידנית", str(n_confirmed), "מיוצא באקסל בכחול", UI_DOT["confirmed"], "ערך שהוקלד או נבחר ידנית; מיוצא באקסל בכחול"),
+    ("כתומים שנכונים", f"{orange_ok}<small>/ {orange_total}</small>" if orange_total else "—",
      "מול טבלת האמת" if orange_total else "אין טבלת אמת לקובץ",
      UI_DOT["orange"], "נמדד מול טבלת האמת, רק בדוגמה מחלק 1 ורק בתאים כתומים שיש בהם ערך" if orange_total else "אין טבלת אמת לקובץ שהועלה"),
 ]), unsafe_allow_html=True)
@@ -643,27 +602,24 @@ wb.save(buf)
 download_slot.download_button("הורד אקסל", buf.getvalue(), file_name="commitments.xlsx", key="dl_xlsx", width="stretch",
                               mime="application/vnd.openxmlformats-officedocument.spreadsheetml.sheet", type="primary")
 
-# ---------- סרגל סינון מהיר + מצב פוקוס ----------
+# ---------- סרגל אחד: מסננים מהירים, מונה, מצב פוקוס ----------
 masks = row_masks(colors)
-counts = {k: int(masks[k].sum()) for k in FILTERS}
 with st.container(key="toolbar"):
-    f_col, focus_col = st.columns([3, 1.25], vertical_alignment="bottom")
+    f_col, count_col, focus_col = st.columns([3.1, 1.2, 1.7], vertical_alignment="center", gap="medium")
+    with focus_col:                                          # קודם הפוקוס: המספרים על כפתורי הסינון תלויים בו
+        with st.container(key="focus_wrap"):
+            focus = st.toggle(FOCUS_LABEL, key="focus_mode")
+    counts = filter_counts(colors, focus)
     with f_col:
         status_filter = st.segmented_control("סינון מהיר לפי סטטוס", list(FILTERS), default="all", key="status_filter",
-                                             format_func=lambda k: f"{FILTERS[k]} · {counts[k]}") or "all"
-    with focus_col:
-        with st.container(key="focus_wrap"):
-            focus = st.toggle(FOCUS_LABEL, key="focus_mode", help="מסתיר שורות שכל השדות בהן ירוקים או מאושרים; נשארות רק שורות עם שדה כתום, צהוב או ריק")
-    st.markdown(LEGEND_HTML, unsafe_allow_html=True)
+                                             label_visibility="collapsed",
+                                             format_func=lambda k: f"{FILTERS[k]}\u2002**{counts[k]}**") or "all"
+    count_slot = count_col.empty()
 
-show = visible_rows(colors, status_filter, focus)
+show = visible_rows(colors, status_filter, focus)            # במצב פוקוס: רק שורות עם שדה כתום / צהוב / ריק, אף פעם לא שורה תקינה
 view, view_colors = df[show], colors[show]
-counts_attention = int(masks["attention"].sum())
-st.markdown(
-    f"<div class='ws-title'>תוצאות<span>מציג {len(view)} מתוך {len(df)} שורות · {counts_attention} שורות עדיין דורשות בדיקה"
-    f" · לחצי על תא כדי לפתוח את כרטיס הבדיקה</span></div>",
-    unsafe_allow_html=True,
-)
+count_slot.markdown(f"<div class='counter'><b>{len(view)}</b> מתוך {len(df)} שורות<span>{int(masks['attention'].sum())} דורשות בדיקה</span></div>",
+                    unsafe_allow_html=True)
 
 # ---------- הטבלה ברוחב מלא ----------
 # selected_cell נשמר תמיד כ(אינדקס שורה בטבלה המלאה, שם עמודה), כך שהבחירה נשמרת גם כשהסינון משתנה.
@@ -710,9 +666,9 @@ if selected:
                 "if(el){el.scrollIntoView({behavior:'smooth',block:'start'});}},120);</script>", unsafe_allow_javascript=True)
 else:
     first = next_attention_cell(colors, list(view.index), None) if not view.empty else None
-    tip, go = st.columns([5, 1.3], vertical_alignment="center")
-    tip.markdown("<div class='placeholder'><div class='ring'>↑</div><div><b>בחרי תא בטבלה</b>"
-                 "<span>כרטיס הבדיקה ייפתח כאן: האזור הסרוק, הדגלים, ההצעות וכפתורי האישור.</span></div></div>", unsafe_allow_html=True)
+    tip, go = st.columns([5, 1.2], vertical_alignment="center")
+    tip.markdown("<div class='placeholder'><b>בחרי תא בטבלה</b>"
+                 "<span>כרטיס הבדיקה ייפתח כאן: האזור הסרוק, הדגלים, ההצעות וכפתורי האישור.</span></div>", unsafe_allow_html=True)
     go.button("התחילי מהחריג הראשון", key="first_cell", on_click=_select, args=(first,), disabled=first is None, type="primary", width="stretch")
 
 with st.container(key="secondary"):                         # אזורים משניים: סגורים כברירת מחדל
