@@ -181,6 +181,19 @@ def test_open_next_pending_moves_in_sort_order_and_across_pages(db):
     assert at.session_state["rec_open"] == ids["pending"][25] and at.number_input(key="rec_page").value == 2
 
 
+def test_open_prev_pending_moves_backwards_and_wraps(db):
+    """הכפתור החדש בסרגל הפעולות: הממתינה הקודמת באותו סדר, עם חזרה לסוף הרשימה."""
+    uid, ids = make_upload(db, "a.pdf", "a", utc_of(2026, 10, 1), n_pending=3)
+    at = screen()
+    at.session_state["rec_open"] = ids["pending"][1]
+    at.run()
+    assert not at.exception
+    next(b for b in at.button if b.key == f"rec_prev_{ids['pending'][1]}").click().run()
+    assert at.session_state["rec_open"] == ids["pending"][0]
+    next(b for b in at.button if b.key == f"rec_prev_{ids['pending'][0]}").click().run()
+    assert at.session_state["rec_open"] == ids["pending"][2]
+
+
 def test_open_next_skips_approved_and_adds_pending_to_a_hiding_filter(db):
     uid, ids = make_upload(db, "a.pdf", "a", utc_of(2026, 10, 1), n_pending=2, n_ready=2)
     at = screen()

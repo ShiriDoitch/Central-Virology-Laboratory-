@@ -9,6 +9,7 @@ import streamlit as st
 
 from src import service
 from src import ui_theme as ui
+from src.confirm import flag_chips_html, md_text
 from src.export import COLUMNS, FIELD_KEYS
 from src.privacy import log_server_error
 
@@ -178,12 +179,15 @@ def _close_detail() -> None:
     st.session_state["_rec_gen"] = st.session_state.get("_rec_gen", 0) + 1
 
 
-def _open_next(current_id: int) -> None:
-    """פותח את הרשומה הממתינה הבאה בסדר המיון והסינון הנוכחיים (עם חזרה להתחלה), ועובר לעמוד הטבלה שלה. אם סינון הסטטוס
-    הפעיל מסתיר רשומות ממתינות, מוסיפים אליו "ממתינה" כדי שהיא תהיה גלויה בטבלה."""
+def _open_neighbor(current_id: int, back: bool = False) -> None:
+    """פותח את הרשומה הממתינה הבאה (או הקודמת) בסדר המיון והסינון הנוכחיים, עם חזרה להתחלה, ועובר לעמוד הטבלה שלה.
+    אם סינון הסטטוס הפעיל מסתיר רשומות ממתינות, מוסיפים אליו "ממתינה" כדי שהיא תהיה גלויה בטבלה."""
     conn = service.open_connection()
     flt = st.session_state.get("_rec_flt") or service.RecordFilter()
-    nxt = service.next_pending_id(conn, flt, current_id)
+    if back:      # אחורה = אותה בחירה על הרשימה ההפוכה (בלי סינון סטטוס, כמו next_pending_id)
+        nxt = service.pick_next_pending(list(reversed(service.ordered_ids(conn, replace(flt, statuses=[])))), current_id)
+    else:
+        nxt = service.next_pending_id(conn, flt, current_id)
     if nxt is None:
         st.session_state["rec_msg"] = ("info", "אין רשומות ממתינות נוספות בסינון הנוכחי.")
         return
@@ -194,6 +198,14 @@ def _open_next(current_id: int) -> None:
     if pos is not None:
         st.session_state["_rec_goto_page"] = pos // st.session_state.get("rec_size", PAGE_SIZES[1]) + 1
     _pin(nxt)
+
+
+def _open_next(current_id: int) -> None:
+    _open_neighbor(current_id)
+
+
+def _open_prev(current_id: int) -> None:
+    _open_neighbor(current_id, back=True)
 
 
 def _approve(rid: int) -> None:
@@ -217,6 +229,19 @@ def _revert(rid: int, key: str) -> None:
         st.session_state["rec_msg"] = ("success", "הערך הוחזר להצעת המערכת.")
 
 
+def render_field_notes(fs: dict, key: str, he_flag) -> None:
+    """דגלים וחלופות של שדה, מקופלים. נפתח מעצמו רק בשדה שסומן לבדיקה (כתום), כדי שהכרטיס יישאר שקט."""
+    notes = [he_flag(f, key) for f in fs["flags"]]
+    alts = list(fs["alternatives"] or [])
+    if not notes and not alts:
+        return
+    with st.expander(f"דגלים וחלופות ({len(notes) + len(alts)})", expanded=fs["color"] == "orange"):
+        if notes:
+            st.markdown("**לבדיקה:** " + flag_chips_html(notes), unsafe_allow_html=True)
+        if alts:
+            st.markdown("**חלופות:** " + " | ".join(md_text(a) for a in alts))
+
+
 def render_detail(conn, rid: int, he_flag) -> None:
     rec = service.record_detail(conn, rid)
     if rec is None:
@@ -225,35 +250,42 @@ def render_detail(conn, rid: int, he_flag) -> None:
         return
     locked = rec["status"] == "approved"
     with st.container(border=True, key="rec_detail"):
-        nav_next, nav_close = st.columns([3, 1], vertical_alignment="center")
-        nav_next.button("פתחי את הבאה בתור (ממתינה)", key=f"rec_next_{rid}", on_click=_open_next, args=(rid,), width="stretch",
-                        help="עוברת לרשומה הממתינה הבאה בסדר המיון והסינון הנוכחיים")
-        nav_close.button("סגירה", key=f"rec_close_{rid}", on_click=_close_detail, width="stretch")
-        head, btn = st.columns([4, 1.6], vertical_alignment="center")
-        head.markdown(f"**רשומה {rec['id']}** · עמוד {rec['page_no']} · שורה {rec['ordinal'] + 1} · סטטוס: **{STATUS_HE[rec['status']]}**")
-        if locked:
-            btn.button("בטלי אישור", key=f"rec_unappr_{rid}", on_click=_unapprove, args=(rid,), width="stretch")
-        else:
-            btn.button("אשרי רשומה", key=f"rec_appr_{rid}", on_click=_approve, args=(rid,), type="primary", width="stretch")
-        if locked:
-            st.caption("הרשומה מאושרת ונעולה לשינוי; עיבוד חוזר של הקובץ לא ידרוס אותה.")
-        cols = st.columns(2)
-        for i, key in enumerate(FIELD_KEYS):
-            fs = rec["fields"][key]
-            with cols[i % 2]:
-                shown = rec[COLUMN_OF[key]] or ""
-                st.session_state.setdefault(f"rec_in_{rid}_{key}", shown)
-                st.text_input(f"{TITLES[key]}  ·  {COLOR_HE.get(fs['color'], fs['color'])}", key=f"rec_in_{rid}_{key}", disabled=locked)
-                notes = [he_flag(f, key) for f in fs["flags"]]
-                if notes:
-                    st.caption("לבדיקה: " + " · ".join(notes))
-                if fs["alternatives"]:
-                    st.caption("חלופות: " + " | ".join(fs["alternatives"]))
-                if fs["cell_confirmed"] and not locked:
-                    st.button("החזירי להצעת המערכת", key=f"rec_rv_{rid}_{key}", on_click=_revert, args=(rid, key))
-        current = {k: rec[COLUMN_OF[k]] for k in FIELD_KEYS}
-        st.button("שמרי תיקונים", key=f"rec_save_{rid}", on_click=_save_edits, args=(rid, rec["version"], current), disabled=locked,
-                  type="primary")
+        with st.container(key="rec_actions"):          # סרגל פעולות אחד: אישור (ראשי), ניווט בתור, סגירה
+            appr, prev_b, next_b, close_b = st.columns(4, vertical_alignment="center")
+            if locked:
+                appr.button("בטלי אישור", key=f"rec_unappr_{rid}", on_click=_unapprove, args=(rid,), width="stretch")
+            else:
+                appr.button("אשרי רשומה", key=f"rec_appr_{rid}", on_click=_approve, args=(rid,), type="primary", width="stretch")
+            prev_b.button("← הממתינה הקודמת", key=f"rec_prev_{rid}", on_click=_open_prev, args=(rid,), width="stretch",
+                          help="הרשומה הממתינה הקודמת בסדר המיון והסינון הנוכחיים")
+            next_b.button("הממתינה הבאה →", key=f"rec_next_{rid}", on_click=_open_next, args=(rid,), width="stretch",
+                          help="הרשומה הממתינה הבאה בסדר המיון והסינון הנוכחיים")
+            close_b.button("סגירה", key=f"rec_close_{rid}", on_click=_close_detail, width="stretch")
+        st.markdown(
+            f"<div class='rec-head'><span class='rec-title'>רשומה {int(rec['id'])}</span>"
+            f"{ui.badge(STATUS_STATE[rec['status']], STATUS_HE[rec['status']])}"
+            f"<span class='rec-meta'>עמוד {int(rec['page_no'])} · שורה {int(rec['ordinal']) + 1}"
+            + (" · נעולה לשינוי; עיבוד חוזר של הקובץ לא ידרוס אותה" if locked else "") + "</span></div>",
+            unsafe_allow_html=True)
+        with st.container(key="rec_fields"):
+            cols = st.columns(2, gap="medium")
+            for i, key in enumerate(FIELD_KEYS):
+                fs = rec["fields"][key]
+                state = fs["color"] if fs["color"] in ui.STATES else "empty"
+                with cols[i % 2]:
+                    shown = rec[COLUMN_OF[key]] or ""
+                    if locked:                         # רשומה נעולה: הערך נקרא כטקסט, לא כשדה קלט מושתק
+                        st.markdown(ui.field_row(TITLES[key], shown, state, mono=key in CODE_KEYS), unsafe_allow_html=True)
+                    else:
+                        st.session_state.setdefault(f"rec_in_{rid}_{key}", shown)
+                        st.markdown(ui.field_head(TITLES[key], state), unsafe_allow_html=True)
+                        st.text_input(TITLES[key], key=f"rec_in_{rid}_{key}", label_visibility="collapsed")
+                    render_field_notes(fs, key, he_flag)
+                    if fs["cell_confirmed"] and not locked:
+                        st.button("החזירי להצעת המערכת", key=f"rec_rv_{rid}_{key}", on_click=_revert, args=(rid, key))
+        if not locked:
+            current = {k: rec[COLUMN_OF[k]] for k in FIELD_KEYS}
+            st.button("שמרי תיקונים", key=f"rec_save_{rid}", on_click=_save_edits, args=(rid, rec["version"], current), type="primary")
         with st.expander("יומן שינויים"):
             if rec["audit"]:
                 st.dataframe(pd.DataFrame(rec["audit"])[["at", "field", "action", "old", "new"]], hide_index=True, width="stretch")

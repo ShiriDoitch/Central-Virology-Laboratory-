@@ -101,9 +101,13 @@ def test_detail_edit_save_and_approve_roundtrip(seeded):
     assert rec["sender"] == "מכבי" and rec["fields"]["sender"]["human_edited"]
     next(b for b in at.button if b.key == f"rec_appr_{rid}").click().run()
     assert repo.get_record(conn, rid)["status"] == "approved"
-    assert at.text_input(key=f"rec_in_{rid}_sender").disabled
+    # רשומה מאושרת נעולה: אין שדות קלט בכלל (גם לא מושתקים), הערכים מוצגים כטקסט, ואין כפתור שמירה
+    assert not [t for t in at.text_input if t.key == f"rec_in_{rid}_sender"]
+    assert any("מכבי" in m.value for m in at.markdown)
+    assert not [b for b in at.button if b.key == f"rec_save_{rid}"]
     next(b for b in at.button if b.key == f"rec_unappr_{rid}").click().run()
     assert repo.get_record(conn, rid)["status"] in ("pending", "ready")
+    assert at.text_input(key=f"rec_in_{rid}_sender").value == "מכבי"
 
 
 def test_invalid_edit_shows_error_and_writes_nothing(seeded):

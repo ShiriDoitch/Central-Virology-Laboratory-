@@ -53,6 +53,11 @@ def field_row(label: str, value: str | None, state: str, mono: bool = False, emp
             f"<div class='ro-value{' mono' if mono else ''}'>{shown}</div>{dot(state)}</div>")
 
 
+def field_head(label: str, state: str) -> str:
+    """ראש שדה שניתן לעריכה: התווית מימין, נקודת המצב + המילה משמאל, ומתחתיהן שדה הקלט."""
+    return f"<div class='fld-head'><span class='ro-label'>{html.escape(label)}</span>{dot(state)}</div>"
+
+
 def section(title: str, hint: str | None = None) -> str:
     """כותרת מקטע: שורה אחת, משקל אחד, בלי אייקונים."""
     extra = f"<span class='sec-hint'>{html.escape(hint)}</span>" if hint else ""
@@ -153,6 +158,7 @@ code {font-family: 'IBM Plex Mono', monospace !important; direction: ltr; unicod
 .ro-value.mono {font-family: 'IBM Plex Mono', monospace; direction: ltr; unicode-bidi: embed; text-align: right;}
 .ro-empty {color: var(--ink-3); font-weight: 400;}
 .ro-field .state {margin-top: var(--sp-1);}
+.fld-head {display: flex; align-items: baseline; justify-content: space-between; gap: var(--sp-2); margin: 0 0 2px;}
 .flag {display: inline-flex; align-items: center; gap: 6px; margin: 2px 0 2px 6px; padding: 2px 10px; border-radius: var(--radius-pill);
       color: var(--orange-ink); background: var(--orange-fill); border: 1px solid var(--orange-line); font-size: var(--fs-cap);}
 
@@ -248,7 +254,7 @@ code {font-family: 'IBM Plex Mono', monospace !important; direction: ltr; unicod
       border-radius: var(--radius) !important; box-shadow: var(--shadow-lift); padding: var(--sp-4) var(--sp-5) var(--sp-5) !important;
       scroll-margin-top: 120px;}
 .st-key-rec_actions .stButton > button {height: 38px; min-height: 38px; white-space: nowrap;}
-.st-key-rec_head {display: flex; align-items: center; gap: var(--sp-3); flex-wrap: wrap;}
+.rec-head {display: flex; align-items: center; gap: var(--sp-3); flex-wrap: wrap; margin: var(--sp-2) 0 var(--sp-3);}
 .rec-title {font-size: var(--fs-section); font-weight: 600; color: var(--ink);}
 .rec-meta {font-size: var(--fs-cap); color: var(--ink-3);}
 .st-key-rec_fields [data-testid="stExpander"] {border: 1px solid var(--line); border-radius: var(--radius-sm); margin: 0 0 var(--sp-3);}
