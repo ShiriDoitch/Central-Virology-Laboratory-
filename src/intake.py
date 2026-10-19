@@ -35,11 +35,45 @@ def render_region(path: str, page: int, fractions: tuple[float, float, float, fl
         doc.close()
 
 
+IMAGE_MAX_PIXELS = 20_000_000          # מעל זה העמוד המרונדר נחשב גדול מדי למודל
+IMAGE_MAX_BYTES = 8 * 1024 * 1024      # גם JPEG מעל גודל זה נחשב גדול מדי
+IMAGE_LONG_SIDE = 2500                 # הצלע הארוכה אחרי הקטנה (פיקסלים)
+RETRY_LONG_SIDE = 1600                 # הקטנה חזקה יותר לניסיון החוזר אחרי שגיאת "בקשה גדולה / לא תקינה"
+
+
+def shrink_jpeg(img: bytes, long_side: int | None = None, quality: int = JPEG_QUALITY) -> bytes:
+    """מקטין JPEG כך שהצלע הארוכה היא long_side לכל היותר. תמונה שכבר קטנה מזה, או שאינה תמונה תקינה: מוחזרת כמות שהיא (אותם בתים)."""
+    long_side = long_side or IMAGE_LONG_SIDE
+    try:
+        im = Image.open(io.BytesIO(img))
+        if max(im.size) <= long_side:
+            return img
+        scale = long_side / max(im.size)
+        out = io.BytesIO()
+        im.convert("RGB").resize((max(1, round(im.width * scale)), max(1, round(im.height * scale))), Image.LANCZOS).save(
+            out, "JPEG", quality=quality)
+        return out.getvalue()
+    except Exception:
+        return img
+
+
 def pdf_to_images(path: str, dpi: int = 200, pages: list[int] | None = None) -> list[bytes]:
-    """ממיר עמודי PDF ל-JPEG. pages = מספרי עמודים מבוססי 1; None = כולם."""
+    """ממיר עמודי PDF ל-JPEG. pages = מספרי עמודים מבוססי 1; None = כולם.
+    עמוד שהרינדור שלו היה עולה על IMAGE_MAX_PIXELS (למשל צילום גדול שהומר ל-PDF) מרונדר ישר בגודל מוקטן (צלע ארוכה IMAGE_LONG_SIDE),
+    ותוצאה שעדיין עוברת IMAGE_MAX_BYTES מוקטנת בנוסף. כל עמוד אחר: אותם בתים בדיוק כמו תמיד (מפתחות המטמון והריצות השמורות לא משתנים)."""
     doc = pymupdf.open(path)
     try:
         idx = range(len(doc)) if pages is None else [p - 1 for p in pages]
-        return [doc[i].get_pixmap(dpi=dpi).tobytes("jpeg", jpg_quality=JPEG_QUALITY) for i in idx]
+        return [_render_page(doc[i], dpi) for i in idx]
     finally:
         doc.close()
+
+
+def _render_page(page, dpi: int) -> bytes:
+    rect = page.rect
+    width_px, height_px = rect.width * dpi / 72, rect.height * dpi / 72
+    if width_px * height_px > IMAGE_MAX_PIXELS:
+        zoom = IMAGE_LONG_SIDE / max(width_px, height_px) * dpi / 72
+        return page.get_pixmap(matrix=pymupdf.Matrix(zoom, zoom)).tobytes("jpeg", jpg_quality=JPEG_QUALITY)
+    jpeg = page.get_pixmap(dpi=dpi).tobytes("jpeg", jpg_quality=JPEG_QUALITY)
+    return shrink_jpeg(jpeg) if len(jpeg) > IMAGE_MAX_BYTES else jpeg
