@@ -16,6 +16,7 @@ from google.genai import errors, types
 from PIL import Image
 from pydantic import BaseModel, ValidationError
 
+from .intake import RETRY_LONG_SIDE, shrink_jpeg
 from .quota import DailyQuotaExhausted, ModelNotFound, QuotaTracker, is_daily_quota_error
 from .schema import PageExtraction, RegionsExtraction
 
@@ -153,6 +154,20 @@ def _is_transient(e: Exception) -> bool:
     if isinstance(e, (httpx.TimeoutException, httpx.TransportError)):
         return True
     return isinstance(e, errors.APIError) and getattr(e, "code", None) in TRANSIENT_CODES
+
+
+PAYLOAD_ERROR_CODES = ("payload_too_large", "invalid_payload")      # קודי error_code בתוצאה כושלת
+
+
+def _error_code(e: Exception) -> str | None:
+    """קוד כשל יציב (בלי טקסט): 413 = הבקשה גדולה מדי, 400 (INVALID_ARGUMENT) = מטען לא תקין. שניהם לא חולפים בהמתנה ולכן לא מנוסים
+    שוב כרגיל (ראו extract: ניסיון אחד נוסף עם תמונה מוקטנת)."""
+    code = getattr(e, "code", None)
+    if isinstance(e, errors.APIError) and code == 413:
+        return "payload_too_large"
+    if isinstance(e, errors.APIError) and code == 400:
+        return "invalid_payload"
+    return None
 
 
 def _short_error(e: Exception) -> str:
@@ -356,6 +371,7 @@ def _run_gemini_key(contents: list, schema: type[BaseModel], api_key: str, index
     model_errors: dict[str, str] = {}
     stats: Counter = Counter()
     last_error = "unknown"
+    error_code: str | None = None
     recoverable = False
     json_tries = 1 if attempts_per_model is not None else 2   # מעבר שני: בלי ניסיון חוזר על JSON שבור
     for _ in range(json_tries):  # ניסיון + ניסיון חוזר אחד על JSON שבור
@@ -369,13 +385,17 @@ def _run_gemini_key(contents: list, schema: type[BaseModel], api_key: str, index
                     **parsed.model_dump()}
         except ValidationError:
             last_error = "model returned invalid JSON"
+            error_code = "invalid_json"
             recoverable = True
         except Exception as e:  # לא להכשיל את כל הריצה בגלל עמוד אחד
             last_error = f"{type(e).__name__}: {_redact(str(e)[:200], all_keys)}"
+            error_code = _error_code(e)
             recoverable = _is_recoverable(e)
             break
     result = {"ok": False, "error": last_error, "models_tried": tried, "model_errors": model_errors,
               "stats": dict(stats), "recoverable": recoverable}
+    if error_code:
+        result["error_code"] = error_code
     exhausted = [m for m, v in model_errors.items() if v == "daily_quota"]
     if exhausted:
         result["daily_quota_exhausted"] = exhausted
@@ -592,8 +612,16 @@ def _run_anthropic(contents: list, schema: type[BaseModel], models: list[str] | 
 def extract(images: list[bytes]) -> dict:
     """מעבר ראשון: תמונות של עמוד (בדרך כלל אחת) -> dict לפי PageExtraction + "model".
     רץ על מודלים קטנים בלבד (model_chain)."""
-    parts = [_image_part(img) for img in images]
-    return _run([*parts, PROMPT], PageExtraction)
+    res = _run([*[_image_part(img) for img in images], PROMPT], PageExtraction)
+    if res.get("error_code") in PAYLOAD_ERROR_CODES:
+        # בקשה גדולה / מטען לא תקין: לא חוזרים על אותה בקשה בכל מודל ומפתח. ניסיון אחד נוסף עם תמונה מוקטנת, ואם אין מה להקטין: נכשל מיד.
+        smaller = [shrink_jpeg(img, RETRY_LONG_SIDE) for img in images]
+        if smaller != list(images):
+            retry = _run([*[_image_part(img) for img in smaller], PROMPT], PageExtraction)
+            stats = Counter(res.get("stats") or {})
+            stats.update(retry.get("stats") or {})
+            return {**retry, "stats": dict(stats), "downscaled_retry": True}
+    return res
 
 
 def extract_regions(crops: dict[str, bytes]) -> dict:
@@ -620,6 +648,7 @@ def _run_regions_with_fallback(contents: list, chain: list[str]) -> dict:
     model_errors: dict[str, str] = {}
     tried: list[str] = []
     last_error = "unknown"
+    error_code: str | None = None
     recoverable_all, key_errors = True, {}
     for i, model in enumerate(chain):
         if i and not (set(model_errors.values()) <= {"daily_quota", "404"}):
@@ -636,13 +665,18 @@ def _run_regions_with_fallback(contents: list, chain: list[str]) -> dict:
         last_error = res.get("error", "unknown")
         model_errors[model] = ("daily_quota" if model in (res.get("daily_quota_exhausted") or [])
                                else (res.get("model_errors") or {}).get(model) or last_error)
-    if recoverable_all and claude_fallback_available() and provider() != "anthropic":
+        error_code = res.get("error_code") or error_code
+        if res.get("error_code") in PAYLOAD_ERROR_CODES:
+            break                                        # אותם חיתוכים ייכשלו גם במודל הבא
+    if recoverable_all and claude_fallback_available() and provider() != "anthropic" and error_code not in PAYLOAD_ERROR_CODES:
         res = _claude_fallback(contents, RegionsExtraction, REGION_ATTEMPTS, model_errors, stats)      # גיבוי אחרון: הדף עדיין מעובד
         if res.get("ok"):
             return {**res, "model_errors": dict(model_errors)}
         stats = Counter(res.get("stats") or {})
         last_error = f"{last_error}; claude: {res.get('error', 'unknown')}"
     result = {"ok": False, "error": last_error, "models_tried": tried, "model_errors": model_errors, "stats": dict(stats)}
+    if error_code:
+        result["error_code"] = error_code
     exhausted = [m for m, v in model_errors.items() if v == "daily_quota"]
     if exhausted and "claude:" not in last_error:
         result["daily_quota_exhausted"] = exhausted

@@ -143,6 +143,8 @@ def process_page(pdf_path: str, page: int, force_second_pass: bool = False,
            "rotation": rotation, "page_flags": page_flags,
            "stats": {"pass1": sum_stats(*stats1), "pass2": {}}}
     if not r1.get("ok"):
+        if r1.get("error_code"):
+            out["error_code"] = r1["error_code"]
         return out
 
     # סיבוב: זיהוי ציר מקומי + כיוון מדיווח המודל. בדרך כלל קריאה קטנה אחת (מעבר ראשון על העמוד המסובב);

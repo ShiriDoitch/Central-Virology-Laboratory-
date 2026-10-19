@@ -139,13 +139,20 @@ def build_rows(page_result: dict, overrides: dict | None = None) -> list[ExportR
     return out
 
 
+FAILURE_REASONS = {      # לפי error_code בלבד (קוד יציב, בלי טקסט מהשרת): הודעה ברורה במקום הודעה כללית
+    "payload_too_large": "התמונה גדולה מדי למודל (גם אחרי הקטנה). נסי לצלם או לסרוק ברזולוציה נמוכה יותר",
+    "invalid_payload": "המודל דחה את הבקשה (קובץ או תמונה לא תקינים)",
+    "page_timeout": "העיבוד חרג מהזמן המוקצב לעמוד. העלי שוב את אותו קובץ כדי להמשיך מהמקום שנעצר",
+}
+
+
 def skip_reason(page_result: dict) -> str | None:
     """למה עמוד לא נכנס לגיליון הראשי (None = נכנס)."""
     r1 = page_result.get("pass1")
     if not r1:
         return "אין תוצאת חילוץ לעמוד"
     if not r1.get("ok"):
-        return "החילוץ נכשל (פרטים במסוף השרת)"      # לא מציגים את טקסט השגיאה של ה-API: הוא עלול לכלול נתוני בקשה
+        return FAILURE_REASONS.get(r1.get("error_code"), "החילוץ נכשל (פרטים במסוף השרת)")      # לא מציגים את טקסט השגיאה של ה-API: הוא עלול לכלול נתוני בקשה
     if not build_rows(page_result):
         return "המודל סימן: לא טופס התחייבות (ולא נמצא מספר התחייבות)"
     return None
