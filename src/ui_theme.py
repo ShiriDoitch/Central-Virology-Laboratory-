@@ -15,6 +15,8 @@ STATE_FILL = {"green": "#EAF4EE", "orange": "#FBEFDF", "yellow": "#F4EDD3", "con
 STATE_LINE = {"green": "#CFE5D7", "orange": "#F0D9B8", "yellow": "#E4D8A8", "confirmed": "#C9D9EC", "empty": "#E3E0D7"}
 STATE_DOT = {"green": "#2E7D4F", "orange": "#B06A1E", "yellow": "#8A7A22", "confirmed": "#3E72A6", "empty": "#8E948F"}
 STATE_LABEL = {"green": "ירוק", "orange": "לבדיקה", "yellow": "זהב", "confirmed": "אושר ידנית", "empty": "ריק"}
+# גוון תג הסטטוס של רשומה שמורה (הסטטוסים של src/repo.py: ממתינה = יש תא לבדיקה)
+STATUS_STATE = {"pending": "orange", "ready": "green", "approved": "confirmed"}
 PAPER, INK, INK_3 = "#FFFFFF", "#1C2321", "#5A655F"
 STATES = tuple(STATE_INK)
 
@@ -248,7 +250,9 @@ code {font-family: 'IBM Plex Mono', monospace !important; direction: ltr; unicod
 .st-key-rec_pager {border-top: 1px solid var(--line); padding-top: var(--sp-2) !important; margin-top: 2px;}
 .st-key-rec_pager [data-baseweb="input"], .st-key-rec_pager [data-baseweb="select"] > div {min-height: 2rem;}
 .st-key-rec_pager .stNumberInput, .st-key-rec_pager .stSelectbox {max-width: 190px;}
-.st-key-rec_export .stDownloadButton > button {min-height: 2rem;}
+/* תפריט הייצוא: שלוש אפשרויות בעמודה אחת, בלי שלושה כפתורים על המסך */
+[data-testid="stPopoverBody"] .stDownloadButton > button {min-height: 2rem; margin-bottom: var(--sp-1);}
+[data-testid="stPopoverBody"] {min-width: 240px;}
 /* כרטיס הרשומה: סרגל פעולות אחד בראש, ואז הכותרת והשדות */
 .st-key-rec_detail {background: var(--paper) !important; border: 1px solid var(--line) !important; border-top: 3px solid var(--accent) !important;
       border-radius: var(--radius) !important; box-shadow: var(--shadow-lift); padding: var(--sp-4) var(--sp-5) var(--sp-5) !important;

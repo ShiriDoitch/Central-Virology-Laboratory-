@@ -346,9 +346,13 @@ def render_evidence(page_res: dict, er, key: str, image: bytes | None) -> None:
     """צד הראיות: חיתוך האזור מהעמוד הנקי (עם הגדלה) או העמוד המלא, הערך, הדגלים, החלופות והקריאות הגולמיות."""
     cell = er.cells[key]
     crop = crop_for(page_res, key)
+    state, _label = cell_status(cell)
     st.markdown("<div class='col-label'>ראיות מהטופס</div>", unsafe_allow_html=True)
     code = md_code if key in CODE_KEYS else md_text       # קודים במונוספייס; שמות ופרוזה לא. כל טקסט מהטופס עובר escape
-    st.markdown(f"**ערך:** {code(cell.value) if cell.value else '—'}" + (f"  \n**נקרא (raw):** {code(cell.raw)}" if not cell.value and cell.raw else ""))
+    # הערך כטקסט נקי בתוך תא, באותה צורה שבה מוצג שדה נעול בכרטיס הרשומה (src/ui_theme.py)
+    st.markdown(ui.field_row(TITLES[key], cell.value, state, mono=key in CODE_KEYS), unsafe_allow_html=True)
+    if not cell.value and cell.raw:
+        st.markdown(f"**נקרא (raw):** {code(cell.raw)}")
     if cell.flags:
         st.markdown("**לבדיקה:** " + flag_chips_html(he_flag(f, key) for f in cell.flags), unsafe_allow_html=True)
     else:
@@ -427,7 +431,7 @@ def render_detail(page_res: dict, er, key: str, image: bytes | None, row_i: int,
     head.markdown(
         f"<div class='panel-head'><div><div class='ph-eyebrow'>עמוד {int(er.page)} · שורה {row_i + 1} מתוך {n_rows}"
         f"{' · מוסתרת בסינון הנוכחי' if hidden else ''}</div><div class='ph-title'>{html.escape(TITLES[key])}</div></div>"
-        f"<span class='badge {cls}'>{label}</span></div>",
+        f"{ui.badge(cls, label)}</div>",
         unsafe_allow_html=True,
     )
     nav_next.button("לבדיקה הבאה ←", key="next_cell", on_click=_select, args=(nxt,), disabled=nxt is None, width="stretch",
@@ -441,7 +445,8 @@ def render_detail(page_res: dict, er, key: str, image: bytes | None, row_i: int,
             log_server_error("row_info", e)
     if info:
         st_col, btn_col = st.columns([4, 1.6], vertical_alignment="center")
-        st_col.caption(f"סטטוס השורה: **{STATUS_HE[info['status']]}**")
+        st_col.markdown(f"<div class='rec-head'><span class='rec-meta'>סטטוס השורה</span>"
+                        f"{ui.badge(ui.STATUS_STATE[info['status']], STATUS_HE[info['status']])}</div>", unsafe_allow_html=True)
         if info["status"] == "approved":
             btn_col.button("בטלי אישור שורה", key=f"unappr_{info['id']}", on_click=_unapprove_row, args=(info["id"],), width="stretch")
         else:

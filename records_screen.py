@@ -15,7 +15,7 @@ from src.privacy import log_server_error
 
 TITLES = dict(COLUMNS)
 STATUS_HE = {"pending": "ממתינה", "ready": "מוכנה", "approved": "אושרה"}
-STATUS_STATE = {"pending": "orange", "ready": "green", "approved": "confirmed"}   # הגוון של תג הסטטוס (src/repo.py: ממתינה = יש תא לבדיקה)
+STATUS_STATE = ui.STATUS_STATE                    # גוון תג הסטטוס: src/ui_theme.py
 COLOR_HE = ui.STATE_LABEL
 SORT_HE = {"page": "סדר במסמך", "upload": "זמן העלאה", "updated": "עודכן לאחרונה", "last_name": "שם משפחה", "first_name": "שם פרטי", "national_id": 'ת"ז',
            "date": "תאריך קבלה", "sender": "גורם שולח", "commitment": "מס' התחייבות", "status": "סטטוס"}
