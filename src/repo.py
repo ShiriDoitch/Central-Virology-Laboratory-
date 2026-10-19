@@ -362,7 +362,7 @@ def _hydrate(conn, rows) -> list[dict]:
 def search_records(conn, *, search: str | None = None, statuses=None, senders=None, date_from: str | None = None,
                    date_to: str | None = None, upload_id: int | None = None, sort: str = "page", descending: bool = False,
                    limit: int | None = 50, offset: int = 0, uploaded_from: str | None = None,
-                   uploaded_before: str | None = None) -> tuple[list[dict], int]:
+                   uploaded_before: str | None = None, light: bool = False) -> tuple[list[dict], int]:
     """מחזיר (שורות העמוד, סך כל ההתאמות). limit=None = הכול (לייצוא)."""
     where, args = _where(search, statuses, senders, date_from, date_to, upload_id, uploaded_from, uploaded_before)
     total = conn.execute(f"SELECT COUNT(*) FROM records r JOIN uploads u ON u.id = r.upload_id{where}", args).fetchone()[0]
@@ -375,7 +375,8 @@ def search_records(conn, *, search: str | None = None, statuses=None, senders=No
     if limit is not None:
         sql += " LIMIT ? OFFSET ?"
         args = [*args, int(limit), int(offset)]
-    return _hydrate(conn, conn.execute(sql, args).fetchall()), total
+    found = conn.execute(sql, args).fetchall()
+    return ([dict(r) for r in found] if light else _hydrate(conn, found)), total      # light: בלי שאילתת מרכזיים לכל שורה (ניווט)
 
 
 def get_record(conn, record_id: int) -> dict | None:

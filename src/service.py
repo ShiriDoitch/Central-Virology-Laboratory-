@@ -2,6 +2,7 @@
 אין כאן SQL ואין Streamlit. כל כשל כתיבה נרשם בשרת (בלי PII) ולא מפיל עיבוד שכבר רץ."""
 import hashlib
 from dataclasses import dataclass, field
+from datetime import datetime, timedelta, timezone
 
 from . import db_export, repo
 from .confirm import normalize_override
@@ -155,12 +156,64 @@ class RecordFilter:
     upload_id: int | None = None
     sort: str = "page"
     descending: bool = False
+    uploaded_from: str | None = None     # תאריך העלאה (dd.mm.yyyy, שעון מקומי, כולל)
+    uploaded_to: str | None = None
+
+
+WORK_QUEUE = ["pending", "ready"]          # ברירת המחדל במסך הרשומות: מה שעדיין דורש עבודה (בלי מאושרות)
+
+
+def local_day_start_utc(ddmmyyyy: str, plus_days: int = 0) -> str:
+    """חצות מקומי של התאריך (ועוד plus_days) כחותמת ISO ב-UTC, באותו פורמט שבו נשמר uploads.created_at (להשוואת מחרוזות)."""
+    local_midnight = datetime.strptime(ddmmyyyy, "%d.%m.%Y") + timedelta(days=plus_days)
+    return local_midnight.astimezone(timezone.utc).isoformat(timespec="seconds")
+
+
+def upload_time_label(iso_utc: str | None) -> str:
+    """זמן ההעלאה לתצוגה (שעון מקומי): dd.mm.yyyy HH:MM."""
+    if not iso_utc:
+        return ""
+    return datetime.fromisoformat(iso_utc).astimezone().strftime("%d.%m.%Y %H:%M")
+
+
+def _search_args(flt: RecordFilter) -> dict:
+    return dict(search=flt.search, statuses=flt.statuses, senders=flt.senders, date_from=flt.date_from, date_to=flt.date_to,
+                upload_id=flt.upload_id, sort=flt.sort, descending=flt.descending,
+                uploaded_from=local_day_start_utc(flt.uploaded_from) if flt.uploaded_from else None,
+                uploaded_before=local_day_start_utc(flt.uploaded_to, 1) if flt.uploaded_to else None)
 
 
 def query(conn, flt: RecordFilter, limit: int | None = 50, offset: int = 0) -> tuple[list[dict], int]:
-    return repo.search_records(conn, search=flt.search, statuses=flt.statuses, senders=flt.senders, date_from=flt.date_from,
-                               date_to=flt.date_to, upload_id=flt.upload_id, sort=flt.sort, descending=flt.descending,
-                               limit=limit, offset=offset)
+    return repo.search_records(conn, limit=limit, offset=offset, **_search_args(flt))
+
+
+def ordered_ids(conn, flt: RecordFilter) -> list[tuple[int, str]]:
+    """(מזהה, סטטוס) של כל הרשומות שמתאימות לסינון, בסדר המיון הנוכחי (קל: בלי שאילתת מרכזיים לכל שורה)."""
+    rows, _ = repo.search_records(conn, limit=None, light=True, **_search_args(flt))
+    return [(r["id"], r["status"]) for r in rows]
+
+
+def pick_next_pending(items: list[tuple[int, str]], current_id: int | None) -> int | None:
+    """הרשומה הממתינה (pending) הבאה אחרי current_id ברשימה הממוינת, עם חזרה להתחלה. None אם אין אחרת. אם current_id לא ברשימה:
+    הראשונה הממתינה."""
+    ids = [i for i, _ in items]
+    start = ids.index(current_id) + 1 if current_id in ids else 0
+    for i, status in items[start:] + items[:start]:
+        if status == "pending" and i != current_id:
+            return i
+    return None
+
+
+def next_pending_id(conn, flt: RecordFilter, current_id: int | None) -> int | None:
+    """הבאה בתור: בסדר המיון והסינון הנוכחיים, בלי סינון הסטטוס (כדי שאפשר יהיה להגיע לממתינה גם כשהטבלה מציגה רק מוכנות)."""
+    from dataclasses import replace
+    return pick_next_pending(ordered_ids(conn, replace(flt, statuses=[])), current_id)
+
+
+def position_in(conn, flt: RecordFilter, record_id: int) -> int | None:
+    """אינדקס (מ-0) של הרשומה ברשימה הממוינת של הסינון, או None אם אינה בו. לחישוב מספר העמוד."""
+    ids = [i for i, _ in ordered_ids(conn, flt)]
+    return ids.index(record_id) if record_id in ids else None
 
 
 def record_detail(conn, record_id: int) -> dict | None:
