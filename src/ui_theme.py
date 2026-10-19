@@ -28,6 +28,13 @@ def table_cell_css(state: str | None) -> str:
     return f"color: {STATE_INK[state]}; background-color: {fill}" + ("; font-weight: 500" if fill != PAPER else "")
 
 
+def badge_cell_css(state: str | None) -> str:
+    """תא "תג" בטבלה (עמודת הסטטוס): תמיד מילוי בגוון המצב + טקסט כהה, כך שהצבע מגיע תמיד עם מילה."""
+    if state not in STATE_INK:
+        return f"color: {INK_3}; background-color: {PAPER}"
+    return f"color: {STATE_INK[state]}; background-color: {STATE_FILL[state]}; font-weight: 500"
+
+
 def badge(state: str, text: str) -> str:
     """תג מצב: מילה על רקע בגוון המצב (צבע לעולם לא לבד)."""
     return f"<span class='badge {html.escape(state)}'>{html.escape(str(text))}</span>"

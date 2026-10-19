@@ -489,6 +489,10 @@ _notice = st.session_state.pop("_notice", None)
 if _notice:
     st.info(_notice)
 
+if st.session_state.get("view") == "records":   # מסך הרשומות לא מכיל העלאה ולא פעולות עיבוד: הן שייכות למסך העיבוד בלבד
+    records_screen.render(db, he_flag)
+    st.stop()
+
 with st.container(border=True, key="action_card"):         # כרטיס פעולה אחד: העלאה, עיבוד, דוגמה והורדת אקסל (נדבק לראש המסך בגלילה)
     up_col, run_col, sample_col, dl_col = st.columns([4.4, 1, 1.4, 1.2], vertical_alignment="center", gap="small")
     with up_col:
@@ -544,10 +548,6 @@ if run_clicked and upload is not None:
             except Exception as e:
                 log_server_error("process_upload", e)         # הפרטים האמיתיים רק במסוף השרת
                 st.error(GENERIC_ERROR_HE)
-
-if st.session_state.get("view") == "records":
-    records_screen.render(db, he_flag)
-    st.stop()
 
 pages = st.session_state.get("pages")
 images = st.session_state.get("images", {})

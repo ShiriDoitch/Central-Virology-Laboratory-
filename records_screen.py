@@ -8,18 +8,24 @@ import pandas as pd
 import streamlit as st
 
 from src import service
+from src import ui_theme as ui
 from src.export import COLUMNS, FIELD_KEYS
 from src.privacy import log_server_error
 
 TITLES = dict(COLUMNS)
 STATUS_HE = {"pending": "ממתינה", "ready": "מוכנה", "approved": "אושרה"}
-COLOR_HE = {"green": "ירוק", "orange": "לבדיקה", "yellow": "זהב", "confirmed": "אושר ידנית", "empty": "ריק"}
+STATUS_STATE = {"pending": "orange", "ready": "green", "approved": "confirmed"}   # הגוון של תג הסטטוס (src/repo.py: ממתינה = יש תא לבדיקה)
+COLOR_HE = ui.STATE_LABEL
 SORT_HE = {"page": "סדר במסמך", "upload": "זמן העלאה", "updated": "עודכן לאחרונה", "last_name": "שם משפחה", "first_name": "שם פרטי", "national_id": 'ת"ז',
            "date": "תאריך קבלה", "sender": "גורם שולח", "commitment": "מס' התחייבות", "status": "סטטוס"}
 PAGE_SIZES = (25, 50, 100)
-UPLOAD_COL = "הועלה"
+UPLOAD_COL, STATUS_COL = "הועלה", "סטטוס"
 COLUMN_OF = {"first_name": "first_name", "last_name": "last_name", "id": "national_id", "center": "center", "date": "receipt_date",
              "sender": "sender", "commitment": "commitment_no"}
+# עמודות הטבלה בסדר הקריאה (מימין לשמאל). הרשת מצוירת LTR, ולכן הרשימה נבנית הפוך (סוף הרשימה = העמודה הימנית).
+TABLE_FIELDS = ("commitment", "first_name", "last_name", "id", "center", "date")
+CODE_KEYS = ("id", "center", "commitment")           # קודים: יישור וקריאה כמספר, לא כטקסט עברי
+WIDE_KEYS = {"center": 150, "commitment": 130, "id": 120, "date": 110}
 
 
 def _fmt(d: date | None) -> str | None:
@@ -33,33 +39,62 @@ def _set_statuses(statuses: list[str]) -> None:
 COUNTER_STYLE = {"pending": "ממתינות", "ready": "מוכנות", "approved": "אושרו"}
 
 
-def render_counters(counts: dict) -> None:
-    """שורת מונים בראש המסך: כל מונה הוא כפתור שמסנן לפי הסטטוס שלו. בנוסף: תור העבודה (ברירת המחדל) והצגת הכול."""
-    cols = st.columns([1, 1, 1, 1.3, 1], vertical_alignment="center")
-    for col, status in zip(cols, ("pending", "ready", "approved")):
-        col.button(f"{COUNTER_STYLE[status]}  {counts[status]}", key=f"rec_cnt_{status}", on_click=_set_statuses, args=([status],),
-                   type="primary" if st.session_state.get("rec_status") == [status] else "secondary", width="stretch",
-                   help=f"הצג רק רשומות {COUNTER_STYLE[status]}")
-    cols[3].button("תור עבודה (ממתינות + מוכנות)", key="rec_cnt_queue", on_click=_set_statuses, args=(service.WORK_QUEUE,), width="stretch")
-    cols[4].button("הצג הכול", key="rec_cnt_all", on_click=_set_statuses, args=(list(STATUS_HE),), width="stretch")
+def render_top(counts: dict) -> str:
+    """ראש המסך: תיבת חיפוש אחת בולטת, ולצידה המונים כקבוצה מפולחת (כל מונה מסנן לפי הסטטוס שלו).
+    המספר נשאר בסוף התווית, כך שהתווית מספרת גם מה הסטטוס וגם כמה יש."""
+    total = sum(counts.values())
+    queue = counts["pending"] + counts["ready"]
+    search_col, counter_col = st.columns([2, 3.3], vertical_alignment="bottom")
+    search = search_col.text_input("חיפוש בכל הרשומות", key="rec_search", placeholder="שם, ת\"ז, מס' התחייבות או מרכזי")
+    with counter_col:
+        st.markdown("<div class='ro-label'>תצוגה לפי סטטוס</div>", unsafe_allow_html=True)
+        current = list(st.session_state.get("rec_status") or [])
+        with st.container(horizontal=True, gap="small", key="rec_counters"):
+            for label, key, statuses, n in (("תור עבודה", "queue", list(service.WORK_QUEUE), queue),
+                                            (COUNTER_STYLE["pending"], "pending", ["pending"], counts["pending"]),
+                                            (COUNTER_STYLE["ready"], "ready", ["ready"], counts["ready"]),
+                                            (COUNTER_STYLE["approved"], "approved", ["approved"], counts["approved"]),
+                                            ("הכול", "all", list(STATUS_HE), total)):
+                st.button(f"{label}  {n}", key=f"rec_cnt_{key}", on_click=_set_statuses, args=(statuses,),
+                          type="primary" if sorted(current) == sorted(statuses) else "secondary",
+                          help=f"הצג רשומות: {label}")
+    return search
 
 
-def read_filter(options: dict) -> service.RecordFilter:
-    """ווידג'טי הסינון. מחזיר את אובייקט הסינון (גם לייצוא)."""
+def _active_filters() -> list[str]:
+    """אילו מסננים (מלבד החיפוש והסטטוס שבראש המסך) פעילים כרגע, לפי מצב הפקדים: לתג שעל "סינון מתקדם"."""
+    on = []
+    for key, label in (("rec_sender", "גורם שולח"), ("rec_dates", "תאריך קבלה"), ("rec_upl_dates", "תאריך העלאה"), ("rec_upload", "קובץ")):
+        if st.session_state.get(key):
+            on.append(label)
+    if (st.session_state.get("rec_sort") or "page") != "page" or st.session_state.get("rec_desc"):
+        on.append("מיון")
+    return on
+
+
+def read_filter(options: dict, search: str) -> service.RecordFilter:
+    """ווידג'טי הסינון, מקופלים ב"סינון מתקדם" (הסטטוס והחיפוש בראש המסך). מחזיר את אובייקט הסינון (גם לייצוא)."""
     uploads = {u["id"]: u for u in options["uploads"]}
     st.session_state.setdefault("rec_status", list(service.WORK_QUEUE))        # ברירת מחדל: מה שעדיין דורש עבודה
-    with st.container(border=True, key="rec_filters"):
-        c1, c2, c3 = st.columns([2.2, 1.6, 1.6])
-        search = c1.text_input("חיפוש", key="rec_search", placeholder="שם, ת\"ז, מס' התחייבות או מרכזי")
-        statuses = c2.multiselect("סטטוס", list(STATUS_HE), key="rec_status", format_func=lambda s: STATUS_HE[s])
-        senders = c3.multiselect("גורם שולח", options["senders"], key="rec_sender")
-        d1, d5, d2, d3, d4 = st.columns([1.4, 1.4, 1.4, 1.5, 0.9])
-        rng = d1.date_input("טווח תאריך קבלה", value=(), key="rec_dates", format="DD.MM.YYYY")
-        upl = d5.date_input("טווח תאריך העלאה", value=(), key="rec_upl_dates", format="DD.MM.YYYY")
-        upload_id = d2.selectbox("קובץ", [None, *uploads], key="rec_upload",
-                                 format_func=lambda i: "כל הקבצים" if i is None else uploads[i]["filename"])
-        sort = d3.selectbox("מיון", list(SORT_HE), key="rec_sort", format_func=lambda k: SORT_HE[k])
-        desc = d4.toggle("יורד", key="rec_desc")
+    active = _active_filters()
+    label = "סינון מתקדם" + (f"  ·  **{len(active)} מסננים פעילים**" if active else "")
+    with st.container(key="rec_filters"):
+        with st.expander(label, expanded=False):
+            if active:
+                st.markdown(f"<span class='filter-badge'>פעיל: {' · '.join(active)}</span>", unsafe_allow_html=True)
+            c1, c2, c3, c4 = st.columns([1.5, 1.5, 1.5, 1.1])
+            statuses = c1.multiselect("סטטוס", list(STATUS_HE), key="rec_status", format_func=lambda s: STATUS_HE[s],
+                                      placeholder="הכול")
+            senders = c2.multiselect("גורם שולח", options["senders"], key="rec_sender", placeholder="כל הגורמים")
+            upload_id = c3.selectbox("קובץ", [None, *uploads], key="rec_upload",
+                                     format_func=lambda i: "כל הקבצים" if i is None else uploads[i]["filename"])
+            sort = c4.selectbox("מיון", list(SORT_HE), key="rec_sort", format_func=lambda k: SORT_HE[k])
+            d1, d2, d3 = st.columns([1.6, 1.6, 1.1])
+            rng = d1.date_input("טווח תאריך קבלה (יום.חודש.שנה)", value=(), key="rec_dates", format="DD.MM.YYYY")
+            upl = d2.date_input("טווח תאריך העלאה (יום.חודש.שנה)", value=(), key="rec_upl_dates", format="DD.MM.YYYY")
+            with d3:
+                st.markdown("<div class='ro-label'>כיוון המיון</div>", unsafe_allow_html=True)
+                desc = st.toggle("מהסוף להתחלה", key="rec_desc")
     start, end = (rng + (None, None))[:2] if isinstance(rng, tuple) and rng else (None, None)
     u_start, u_end = (upl + (None, None))[:2] if isinstance(upl, tuple) and upl else (None, None)
     return service.RecordFilter(search=search, statuses=statuses, senders=senders, date_from=_fmt(start), date_to=_fmt(end or start),
@@ -67,10 +102,28 @@ def read_filter(options: dict) -> service.RecordFilter:
 
 
 def _table(rows: list[dict]) -> pd.DataFrame:
-    cols = [TITLES[k] for k in reversed(FIELD_KEYS)] + [UPLOAD_COL, "סטטוס", "עמוד"]      # הגריד מצויר משמאל לימין: הראשון בקריאה הוא הימני
-    data = [{**{TITLES[k]: r[COLUMN_OF[k]] or "" for k in FIELD_KEYS}, UPLOAD_COL: service.upload_time_label(r.get("upload_at")),
-             "סטטוס": STATUS_HE[r["status"]], "עמוד": r["page_no"]} for r in rows]
+    """עמודות ברירת המחדל: מס' התחייבות, שם פרטי, שם משפחה, ת"ז, מרכזי, תאריך קבלה, סטטוס, הועלה.
+    (גורם שולח ועמוד המקור מוצגים בכרטיס הרשומה.) הרשת מצוירת LTR, ולכן סדר הרשימה הפוך לסדר הקריאה."""
+    cols = [UPLOAD_COL, STATUS_COL] + [TITLES[k] for k in reversed(TABLE_FIELDS)]
+    data = [{**{TITLES[k]: r[COLUMN_OF[k]] or "" for k in TABLE_FIELDS}, UPLOAD_COL: service.upload_time_label(r.get("upload_at")),
+             STATUS_COL: STATUS_HE[r["status"]]} for r in rows]
     return pd.DataFrame(data, columns=cols)
+
+
+def _styled(df: pd.DataFrame, rows: list[dict]):
+    """עמודת הסטטוס כתג: מילה + גוון המצב (צבע לעולם לא לבד). שאר העמודות נייטרליות."""
+    states = [ui.badge_cell_css(STATUS_STATE.get(r["status"])) for r in rows]
+    return df.style.apply(lambda col: states if col.name == STATUS_COL else [""] * len(col), axis=0)
+
+
+def _table_config(df: pd.DataFrame) -> dict:
+    """יישור ורוחב: הכול לימין (עברית), הסטטוס ממורכז, קודים ברוחב קבוע."""
+    width_of = {TITLES[k]: w for k, w in WIDE_KEYS.items()}
+    cfg = {STATUS_COL: st.column_config.TextColumn(STATUS_COL, width=96, alignment="center"),
+           UPLOAD_COL: st.column_config.TextColumn(UPLOAD_COL, width=130, alignment="right")}
+    for col in df.columns:
+        cfg.setdefault(col, st.column_config.TextColumn(col, width=width_of.get(col), alignment="right"))
+    return cfg
 
 
 def _do(action, *args) -> bool:
@@ -208,18 +261,31 @@ def render_detail(conn, rid: int, he_flag) -> None:
                 st.caption("אין שינויים.")
 
 
+def render_export(conn, flt: service.RecordFilter, total: int) -> None:
+    """ייצוא כל הרשומות שבסינון, מקובץ בתפריט אחד (Excel / CSV / JSON)."""
+    with st.popover("ייצוא · כל הרשומות בסינון", disabled=total == 0):
+        st.markdown(ui.quiet(f"<b>{total}</b> רשומות מתאימות לסינון הפעיל. בחרי פורמט:"), unsafe_allow_html=True)
+        for fmt, label in (("xlsx", "Excel"), ("csv", "CSV"), ("json", "JSON")):
+            try:
+                data, mime, name = service.export_records(conn, flt, fmt)
+                st.download_button(label, data, file_name=name, mime=mime, key=f"rec_dl_{fmt}", disabled=total == 0, width="stretch")
+            except Exception as e:
+                log_server_error("export_records", e)
+                st.caption(f"ייצוא {label} נכשל")
+
+
 def render(db, he_flag) -> None:
     """db = פונקציה שמחזירה חיבור; he_flag = שם דגל בעברית (מוגדר ב-app.py)."""
     conn = db()
     options = service.filter_options(conn)
     counts = options["counts"]
-    st.caption(f"במסד הנתונים · ממתינות: {counts['pending']} · מוכנות: {counts['ready']} · אושרו: {counts['approved']}")
     if not any(counts.values()):
         st.markdown("<div class='empty-state'><b>אין עדיין רשומות</b><p>עבדי קובץ במסך \"עיבוד\" והרשומות יישמרו כאן.</p></div>",
                     unsafe_allow_html=True)
         return
-    render_counters(counts)
-    flt = read_filter(options)
+    with st.container(key="rec_top"):
+        search = render_top(counts)
+        flt = read_filter(options, search)
     st.session_state["_rec_flt"] = flt                                  # לשימוש ה-callbacks (הבאה בתור) ולמבחנים
     size = st.session_state.get("rec_size", PAGE_SIZES[1])
     _rows, total = service.query(conn, flt, limit=1, offset=0)
@@ -230,37 +296,37 @@ def render(db, he_flag) -> None:
         st.session_state["_rec_sig"], st.session_state["rec_page"] = sig, 1
     goto = st.session_state.pop("_rec_goto_page", None)               # "הבאה בתור": קופצים לעמוד של הרשומה הנפתחת
     if goto:
-        st.session_state["rec_page"] = min(max(1, int(goto)), pages_n)
-    bar_l, bar_m, bar_r = st.columns([2, 1.2, 1.2], vertical_alignment="center")
-    page = bar_m.number_input("עמוד", 1, pages_n, key="rec_page")
-    bar_r.selectbox("שורות בעמוד", PAGE_SIZES, index=PAGE_SIZES.index(size), key="rec_size")
-    rows, total = service.query(conn, flt, limit=size, offset=(int(page) - 1) * size)
-    bar_l.markdown(f"<div class='counter'><b>{total}</b> רשומות מתאימות<span>עמוד {int(page)} מתוך {pages_n}</span></div>", unsafe_allow_html=True)
+        st.session_state["rec_page"] = int(goto)
+    # פקדי העימוד מוצגים מתחת לטבלה, אך הערך נדרש לשאילתה שלפניה: נקרא מהמצב ומוגבל לטווח לפני יצירת הפקד
+    page = min(max(1, int(st.session_state.get("rec_page", 1))), pages_n)
+    st.session_state["rec_page"] = page
+    rows, total = service.query(conn, flt, limit=size, offset=(page - 1) * size)
     msg = st.session_state.pop("rec_msg", None)
     if msg:
         getattr(st, msg[0])(msg[1])
-    with st.container(horizontal=True, gap="small", key="rec_export"):
-        st.caption(f"ייצוא של כל {total} הרשומות שמתאימות לסינון:")
-        for fmt, label in (("xlsx", "Excel"), ("csv", "CSV"), ("json", "JSON")):
-            try:
-                data, mime, name = service.export_records(conn, flt, fmt)
-                st.download_button(label, data, file_name=name, mime=mime, key=f"rec_dl_{fmt}", disabled=total == 0)
-            except Exception as e:
-                log_server_error("export_records", e)
-                st.caption(f"ייצוא {label} נכשל")
     selected_id = None
     if not rows:
         st.markdown("<div class='empty-filter'><b>אין רשומות להצגה</b>אין רשומות שמתאימות לחיפוש או לסינון.</div>", unsafe_allow_html=True)
     else:
         try:      # מפתח הרשת כולל עמוד וגל פעולות: בחירה ישנה (אינדקס) לא עוברת לשורה אחרת אחרי החלפת עמוד / אישור / "הבאה בתור"
-            event = st.dataframe(_table(rows), width="stretch", hide_index=True, on_select="rerun", selection_mode="single-row",
-                                 key=f"rec_grid_{abs(hash(sig))}_{int(page)}_{st.session_state.get('_rec_gen', 0)}",
+            table = _table(rows)
+            event = st.dataframe(_styled(table, rows), width="stretch", hide_index=True, on_select="rerun", selection_mode="single-row",
+                                 column_config=_table_config(table),
+                                 key=f"rec_grid_{abs(hash(sig))}_{page}_{st.session_state.get('_rec_gen', 0)}",
                                  height=min(520, 40 + 40 * len(rows)))
             if event.selection.rows:
                 selected_id = rows[event.selection.rows[0]]["id"]
                 st.session_state["rec_open"] = selected_id
         except Exception:                                                  # גרסת Streamlit בלי בחירת שורה
             selected_id = st.selectbox("רשומה", [r["id"] for r in rows], format_func=lambda i: f"רשומה {i}")
+    # שורה שקטה אחת מתחת לטבלה: מה מוצג, עימוד וייצוא
+    with st.container(key="rec_pager"):
+        info_col, page_col, size_col, exp_col = st.columns([1.7, 1, 1, 1.5], vertical_alignment="center")
+        info_col.markdown(ui.quiet(f"<b>{total}</b> רשומות מתאימות · עמוד {page} מתוך {pages_n}"), unsafe_allow_html=True)
+        page_col.number_input("עמוד", 1, pages_n, key="rec_page")
+        size_col.selectbox("שורות בעמוד", PAGE_SIZES, index=PAGE_SIZES.index(size), key="rec_size")
+        with exp_col:
+            render_export(conn, flt, total)
     if not selected_id:
         selected_id = st.session_state.get("rec_open")                  # רשומה שנפתחה (הבאה בתור / אחרי אישור), גם אם הסינון מסתיר אותה
     if selected_id:
