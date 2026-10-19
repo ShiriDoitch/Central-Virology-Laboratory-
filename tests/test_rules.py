@@ -29,15 +29,16 @@ def dt(value, kind="lab_stamp", source="printed", conf=1.0, evidence="stamp"):
 
 def test_id_digits_only():
     d = rules.decide_id([idn("001-122 3344")])
-    assert d.value == "0011223344"
-    assert not d.uncertain
+    assert d.value == "0011223344"                  # ספרות בלבד, בלי חיתוך אפסים
+    assert d.flags == [rules.F_ID_LENGTH] and d.uncertain      # 10 ספרות: אף פעם לא ירוק (tests/test_id_length.py)
 
 
-@pytest.mark.parametrize("raw", ["1122334", "11223344", "0011223344"])  # 7, 8, 10 ספרות: הערך לא נפסל (1122334 רק כתום)
+@pytest.mark.parametrize("raw", ["1122334", "11223344", "0011223344"])  # 7, 8, 10 ספרות: הערך לא נפסל ולא משתנה
 def test_id_lengths_not_rejected(raw):
     d = rules.decide_id([idn(raw)])
     assert d.value == raw
-    assert d.uncertain == (raw == "1122334")      # 1122334 נכשלת בספרת ביקורת: כתום, אבל לא נפסלת
+    # 1122334 נכשלת בספרת ביקורת, ו-10 ספרות (0011223344) כתומה בגלל האורך; 8 ספרות תקינות נשארות ירוקות
+    assert d.uncertain == (raw in ("1122334", "0011223344"))
 
 
 def test_id_checksum_failure_is_orange_flag_value_unchanged():
@@ -91,9 +92,10 @@ def test_single_suggestion_and_value_is_never_replaced():
 
 
 def test_leading_zeros_normalized_then_checked():
-    assert rules.check_israeli_id("0011223344")
+    assert rules.check_israeli_id("0011223344")             # ספרת הביקורת עוברת אחרי הסרת האפסים...
     d = rules.decide_id([idn("0011223344")])
-    assert d.value == "0011223344" and d.flags == []
+    assert d.value == "0011223344" and d.flags == [rules.F_ID_LENGTH]     # ...אבל 10 ספרות כפי שנקראו אינן ירוקות
+    assert rules.decide_id([idn("011223344")]).flags == []   # 9 ספרות עם אפס מוביל: ללא שינוי
 
 
 def test_seven_digit_id_fails_checksum():
@@ -149,8 +151,8 @@ def test_id_conflict_different_digits():
 
 def test_id_same_after_leading_zeros_is_not_conflict():
     d = rules.decide_id([idn("0011223344"), idn("11223344")])
-    assert d.value == "0011223344"
-    assert not d.uncertain
+    assert d.value == "0011223344" and rules.F_CONFLICT not in d.flags      # אותו מספר אחרי הסרת אפסים: לא סתירה
+    assert d.flags == [rules.F_ID_LENGTH]                                     # אבל הערך שנבחר הוא 10 ספרות: כתום, בלי חיתוך
 
 
 def test_id_not_found_is_empty():

@@ -47,6 +47,8 @@ F_CENTER_BARCODE_EXTRA = "center_barcode_extra"   # ערכי המודל הם ת�
 F_DATE_OUTSIDE_WINDOW = "date_outside_window"    # תאריך קבלה מחוץ לחלון [תאריך דגימה, שליחה/דגימה + 14 יום, לא בעתיד, לא אחרי תוקף]
 F_DATE_SINGLE_SOURCE = "date_single_source"      # תאריך שנקרא פעם אחת בלבד (בלי קריאה שנייה מחיתוך אזור הקבלה): כתום
 F_ID_CHECKSUM_FAILED = "id_checksum_failed"      # ספרת ביקורת נכשלה: תמיד כתום (הערך לא נפסל ולא משתנה)
+F_ID_LENGTH = "id_length"                        # אורך הערך כפי שנקרא (כולל אפסים מובילים) מחוץ ל-5 עד 9 ספרות: תמיד כתום, הערך נשמר כמות שהוא
+ID_MIN_DIGITS, ID_MAX_DIGITS = 5, 9              # טווח האורך שמותר לו להיות ירוק (5-8 מרופדות ל-9 רק לספרת הביקורת, הערך לא משתנה)
 F_ID_NOT_ISRAELI = "id_not_israeli_format"       # יותר מ-9 ספרות אחרי הסרת אפסים, או אותיות (דרכון): לא בודקים ספרת ביקורת
 
 # רמזים (לא כתום)
@@ -259,6 +261,7 @@ def decide_id(candidates: list[NumberCandidate], regions: dict | None = None,
 
 def _apply_id_checksum(core: Decision) -> Decision:
     """ספרת הביקורת מחליטה רק צבע והצעה; היא לא פוסלת ולא משנה את הערך.
+    - אורך כפי שנקרא מחוץ ל-5 עד 9 ספרות: דגל id_length (כתום, גם כששתי הקריאות מסכימות); הערך לא משתנה.
     - ערך עם אותיות (דרכון) או יותר מ-9 ספרות אחרי הסרת אפסים: לא בודקים; דגל id_not_israeli_format (כתום).
     - עוברת ושתי קריאות עצמאיות מסכימות (רמז two_readings_agree, הדגל היחיד handwritten): ירוק, גם בכתב יד.
     - עוברת בלי שתי קריאות: ללא שינוי (כתב יד נשאר כתום).
@@ -266,10 +269,17 @@ def _apply_id_checksum(core: Decision) -> Decision:
       עד 3 ערכים שעוברים: הם ב-alternatives כהצעות (יותר מ-3: אין הצעות)."""
     if not core.value:
         return core
+    # אורך כפי שנקרא (לא אחרי הסרת אפסים): "0011223344" הוא 10 ספרות ולכן לעולם לא ירוק, גם אם אחרי הסרת האפסים הוא עובר ספרת ביקורת.
+    # לא חותכים ולא משלימים ספרות: הערך נשאר בתא והאדם מחליט.
+    length_bad = not (ID_MIN_DIGITS <= len(core.value) <= ID_MAX_DIGITS)
+    if length_bad:
+        core = core.model_copy(update={"flags": _dedupe([*core.flags, F_ID_LENGTH])})
     if F_ID_NOT_ISRAELI in core.flags:
         return core
     if len(core.value.lstrip("0")) > 9:
         return core.model_copy(update={"flags": _dedupe([*core.flags, F_ID_NOT_ISRAELI])})
+    if length_bad:
+        return core                                  # בלי בדיקת ספרת ביקורת והצעות תיקון: אורך שגוי הוא הסיבה הראשונה
     if check_israeli_id(core.value):
         if H_TWO_READS in core.hints and core.flags == [F_HANDWRITTEN]:
             return core.model_copy(update={"flags": []})
