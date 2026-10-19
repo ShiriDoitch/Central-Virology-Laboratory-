@@ -18,6 +18,7 @@ from google.genai import errors, types
 from PIL import Image
 from pydantic import BaseModel, ValidationError
 
+from . import status
 from .intake import RETRY_LONG_SIDE, shrink_jpeg
 from .quota import DailyQuotaExhausted, ModelNotFound, QuotaTracker, is_daily_quota_error
 from .schema import PageExtraction, RegionsExtraction
@@ -344,6 +345,7 @@ def _call_model(client, model: str, contents: list, schema: type[BaseModel], sta
         trk.before_call(model)          # יכול לזרוק DailyQuotaExhausted / ModelNotFound (לפני שנשלחה בקשה)
         stats["api_calls"] += 1
         stats[f"calls:{model}"] += 1
+        status.emit("model_call", attempt=attempt + 1, of=attempts)
         rem = remaining_budget()
         call_config = config if rem is None else config.model_copy(
             update={"http_options": types.HttpOptions(timeout=max(1000, int(min(TIMEOUT_MS, rem * 1000))))})   # ניסיון לא חורג מהתקציב
@@ -367,9 +369,12 @@ def _call_model(client, model: str, contents: list, schema: type[BaseModel], sta
                 if minute_429_waited or no_wait_429:
                     raise
                 minute_429_waited = True
+                status.emit("quota_wait", wait_s=QUOTA_WAIT_S)
                 budget_sleep(QUOTA_WAIT_S)
             else:
-                budget_sleep(_jitter(RETRY_WAITS_S[min(attempt, len(RETRY_WAITS_S) - 1)]))
+                delay = _jitter(RETRY_WAITS_S[min(attempt, len(RETRY_WAITS_S) - 1)])
+                status.emit("retry_wait", wait_s=delay, attempt=attempt + 2, of=attempts)
+                budget_sleep(delay)
     return ""
 
 
@@ -392,6 +397,8 @@ def _call_with_fallback(client, contents: list, schema: type[BaseModel],
         if called >= MAX_MODELS_PER_PAGE:
             break
         check_budget(MIN_ATTEMPT_S)
+        if tried:
+            status.emit("model_switch")
         if pending_sleep and fallback_sleep_s:
             budget_sleep(fallback_sleep_s)
         pending_sleep = False
@@ -503,6 +510,7 @@ def _claude_fallback(contents: list, schema: type[BaseModel], max_calls: int | N
                      prior_stats: Counter) -> dict:
     """קריאה אחת ל-Claude (אותה הוראה, אותה סכמה) אחרי שכל מפתחות Gemini והניסיונות החוזרים נכשלו. התוצאה מסומנת
     provider="anthropic" ו-fallback=True (לכן לא נשמרת במטמון ומוצגת באזהרה), ו-fallback_from מתעד מה נכשל ב-Gemini."""
+    status.emit("claude_fallback")
     try:
         res = _run_anthropic(_contents_for_claude(contents), schema, None, max_calls)
     except Exception as e:                      # תרגום תוכן / ייבוא SDK: לא להכשיל את העמוד על תקלה בגיבוי
@@ -538,6 +546,8 @@ def _run(contents: list, schema: type[BaseModel], models: list[str] | None = Non
             check_budget(MIN_ATTEMPT_S)
         except PageTimeout:
             return {**_timeout_failure(stats=total), "provider": "gemini", "key_errors": dict(key_errors)}
+        if index:
+            status.emit("key_switch")
         res = _run_gemini_key(contents, schema, api_key, index, keys, models, max_calls, attempts_per_model,
                               fallback_sleep_s, no_wait_429)
         total.update(res.get("stats") or {})

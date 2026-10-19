@@ -48,6 +48,11 @@ def safe_write_text(path: Path | str, text: str, encoding: str = "utf-8") -> boo
     return True
 
 
+def log_info(message: str) -> None:
+    """שורת מידע למסוף השרת. רק טקסט שנבנה מקודים ומספרים (src/status.py), לעולם לא תוכן מהטופס או טקסט של חריגה."""
+    _log.info("%s", message)
+
+
 def log_server_error(context: str, error: BaseException | str | None) -> None:
     """רושם את הכשל האמיתי למסוף השרת (stderr) בלבד, לא למסך המשתמש. ב-dev: הטקסט המלא (כולל traceback לחריגה), לצורך דיבוג.
     ב-production: רק שם הסוג, כי טקסט של חריגה או של תגובת API עלול להכיל נתוני מטופל (למשל ערך שנכשל באימות)."""

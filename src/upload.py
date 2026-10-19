@@ -10,6 +10,7 @@ from PIL import Image, ImageOps
 
 from .confirm import FIELD_REGION, field_crop
 from .intake import pdf_to_images, rotate_jpeg
+from . import status
 from .privacy import log_server_error
 
 MAX_PAGES = 40
@@ -50,9 +51,11 @@ def to_pdf_bytes(name: str, data: bytes) -> bytes:
     return pymupdf.open(stream=buf.getvalue(), filetype="jpeg").convert_to_pdf()
 
 
-def process_upload(name: str, data: bytes, progress, store=None) -> tuple[list[dict], dict[int, bytes], dict[int, bytes | None]]:
+def process_upload(name: str, data: bytes, progress, store=None, on_status=None) -> tuple[list[dict], dict[int, bytes], dict[int, bytes | None]]:
     """מריץ את הצינור המלא (שני מעברים) על כל עמוד. הקובץ הזמני נמחק בסיום.
-    store (אופציונלי, src/service.Persister): מקבל start(מספר עמודים), page(תוצאת עמוד) אחרי כל עמוד, ו-finish() בסוף."""
+    store (אופציונלי, src/service.Persister): מקבל start(מספר עמודים), page(תוצאת עמוד) אחרי כל עמוד, ו-finish() בסוף.
+    on_status(page, total, text) (אופציונלי): נקרא בזמן העיבוד עם שורת סטטוס בטוחה לפרטיות (src/status.py: קודים ומספרים בלבד, בלי
+    טקסט חריגה, שמות קבצים או ערכים). ברירת מחדל: כתיבת הטקסט לשורת ההתקדמות."""
     from src.pipeline import process_page  # ייבוא מאוחר: טעינת הדוגמה לא דורשת מפתח API
 
     pdf_bytes = to_pdf_bytes(name, data)
@@ -70,8 +73,17 @@ def process_upload(name: str, data: bytes, progress, store=None) -> tuple[list[d
             store.start(total)
         for p in range(1, total + 1):
             progress.progress((p - 1) / total, text=f"מעבד עמוד {p} מתוך {total}")
+            def show(event, p=p):
+                text = event["text"]
+                if on_status is not None:
+                    on_status(p, total, text)
+                else:
+                    progress.progress((p - 1) / total, text=f"עמוד {p} מתוך {total} · {text}")
+
             try:
-                res = process_page(tmp, p)
+                with status.listening(show):
+                    status.emit("page", page=p, of=total)
+                    res = process_page(tmp, p)
             except Exception as e:                       # עמוד אחד שנכשל לא מפיל את כל הריצה
                 log_server_error(f"process_page {p}", e)
                 res = {"page": p, "pass1": {"ok": False, "error": type(e).__name__}, "pass2": None}

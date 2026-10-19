@@ -6,7 +6,7 @@ from pathlib import Path
 
 from PIL import Image, ImageDraw
 
-from . import extractor
+from . import extractor, status
 from .cache import cache_key, cached_extract, cached_regions, store_result
 from .crop import (COMMITMENT_MIN_AREA, ENLARGE_RETRY, choose_box, edges_touching_ink, expand_receipt_fractions, is_valid_box,
                    receipt_region_fractions, region_fractions)
@@ -145,6 +145,7 @@ def _process_page(pdf_path: str, page: int, force_second_pass: bool = False,
     retry_patient_labels=False: בלי קריאה חוזרת של מעבר 2 כשחסרה תווית שם (לחיסכון בקריאות במדידות שלא נוגעות בשמות)."""
     images = pdf_to_images(pdf_path, pages=[page])
     barcodes = decode_pdf_page(pdf_path, page)     # קורא שני מקומי למרכזי (בלי API); None אם הפענוח נכשל
+    status.emit("stage", stage="pass1")
     r1, hit1 = cached_extract(images)
     stats1 = [] if hit1 else [r1.get("stats", {})]
     rotation = {"local_axis": "unknown", "reported": "0", "applied": None, "attempts": 0, "unresolved": False}
@@ -170,6 +171,7 @@ def _process_page(pdf_path: str, page: int, force_second_pass: bool = False,
         accepted = None
         for attempt in (1, 2):
             rotated = [rotate_jpeg(images[0], deg)]
+            status.emit("stage", stage="rotation")
             r_try, hit_try = cached_extract(rotated)
             rotation["attempts"] = attempt
             if not hit_try:
@@ -199,6 +201,7 @@ def _process_page(pdf_path: str, page: int, force_second_pass: bool = False,
     if pass1_needs_retry(r1):
         # ניסיון חוזר אחד, בלי קריאה מהמטמון (נספר במכסה). נשמר במטמון עם retried=true, כך שהרצה חוזרת לא מנסה שוב.
         # אם גם הניסיון החוזר אומר "לא טופס": מדלגים כמו קודם.
+        status.emit("stage", stage="pass1_retry")
         retry = extractor.extract(images)
         stats1.append(retry.get("stats", {}))
         if retry.get("ok"):
@@ -245,6 +248,7 @@ def _process_page(pdf_path: str, page: int, force_second_pass: bool = False,
     if debug_dir:
         save_debug_images(debug_dir, page, images[0], crops, out["boxes"])
 
+    status.emit("stage", stage="pass2")
     r2, hit2 = cached_regions(crops)
     stats2 = [] if hit2 else [r2.get("stats", {})]
     if retry_patient_labels and r2.get("ok") and patient_labels_missing(r2):
@@ -252,6 +256,7 @@ def _process_page(pdf_path: str, page: int, force_second_pass: bool = False,
         wide = region_fractions("patient", choose_box("patient", Box(**r1["patient_box"]) if r1.get("patient_box") else None)[0],
                                 enlarge=ENLARGE_RETRY)
         retry_crops = {**crops, "patient": render_region(pdf_path, page, wide, rotation=rotation["applied"] or 0)}
+        status.emit("stage", stage="label_retry")
         r2b, hit2b = cached_regions(retry_crops)
         if not hit2b:
             stats2.append(r2b.get("stats", {}))

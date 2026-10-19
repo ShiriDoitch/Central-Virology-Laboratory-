@@ -2,9 +2,12 @@
 המצב נשמר ב-data/quota_state.json (מוחרג מגיט) כדי שיישמר גם בין הרצות.
 היום מתאפס לפי שעון האוקיינוס השקט (כך Google מאפסת את המכסה היומית)."""
 import json
+import math
 import time
 from datetime import date, datetime
 from pathlib import Path
+
+from . import status
 
 STATE_PATH = Path("data/quota_state.json")
 CONFIG_PATH = Path(__file__).resolve().parent.parent / "config" / "quotas.json"
@@ -115,6 +118,7 @@ class QuotaTracker:
         state = self._load()
         wait = state["last_call"].get(tier, 0) + self.config[tier]["min_interval_s"] - self._now()
         if wait > 0:
+            status.emit("quota_wait", wait_s=math.ceil(wait))
             self._sleep(wait)
         entry = state["models"].setdefault(model, {"calls": 0, "exhausted": False})
         entry["calls"] += 1
