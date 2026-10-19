@@ -13,6 +13,7 @@ from src.confirm import FIELD_REGION, field_crop, flag_chips_html, md_code, md_t
 from src.export import COLUMNS, CONFIRMED, FIELD_KEYS, GREEN, ORANGE, YELLOW, _readings, build_rows, build_workbook, pass2_issues, skip_reason
 import records_screen
 from src import service
+from src import ui_theme as ui
 from src.intake import pdf_to_images, rotate_jpeg
 from src.schema import PageExtraction
 from src.privacy import GENERIC_ERROR_HE, log_server_error
@@ -26,11 +27,9 @@ MAX_UPLOAD_MB = 25
 GREEN_HEX, ORANGE_HEX = "#" + GREEN.fgColor.rgb[-6:], "#" + ORANGE.fgColor.rgb[-6:]
 CONFIRMED_HEX = "#" + CONFIRMED.fgColor.rgb[-6:]      # שם שאושר על ידי המשתמש
 YELLOW_HEX = "#" + YELLOW.fgColor.rgb[-6:]            # ערך בכתב יד, שתי קריאות מסכימות: מבט לאישור
-# צבעי הביטחון בממשק (נקודה וצבע טקסט, לא מילוי תא). האקסל נשאר בצבעי src/export.py.
-# בטבלה: ירוק = טקסט ירוק בלבד (המצב התקין, בלי רעש); כתום / זהב / כחול = "תג" עדין: טקסט כהה על רקע בהיר באותו גוון.
-UI_TONE = {GREEN_HEX: "#2E7D4F", ORANGE_HEX: "#8A561A", YELLOW_HEX: "#6B5D1C", CONFIRMED_HEX: "#2F5E8E"}
-UI_FILL = {ORANGE_HEX: "#FBEFDF", YELLOW_HEX: "#F4EDD3", CONFIRMED_HEX: "#E6EEF8"}
-UI_DOT = {"green": "#2E7D4F", "orange": "#B06A1E", "yellow": "#8A7A22", "confirmed": "#2F5E8E", "ink": "#1C2321", "empty": "#7A7F7A"}   # צבע המספר בפס המדדים
+# הצבעים עצמם ב-src/ui_theme.py (מקום אחד לעיצוב). כאן רק המיפוי מצבע המילוי של האקסל (src/export.py) לשם המצב.
+HEX_STATE = {GREEN_HEX: "green", ORANGE_HEX: "orange", YELLOW_HEX: "yellow", CONFIRMED_HEX: "confirmed"}
+UI_DOT = {**ui.STATE_DOT, "ink": ui.INK}              # צבע המספר בפס המדדים
 TABLE_H = 520                                        # גובה מרבי של הטבלה ברוחב מלא (גלילה פנימית); כרטיס הבדיקה נפתח מתחתיה
 # סינון מהיר: מפתח -> תווית. "תקין" = שורה בלי אף שדה לבדיקה (ירוק או מאושר בלבד); הלוגיקה ב-src/review.py
 FILTERS = {"all": "הכול", "green": "תקין", "orange": "לבדיקה", "yellow": "זהב", "empty": "ריק"}     # הצבע בא מרקע הכפתור, בלי אייקונים
@@ -108,140 +107,7 @@ def _startup_cleanup() -> int:
 
 st.set_page_config(page_title="חילוץ טפסי התחייבות", layout="wide")
 _startup_cleanup()
-st.markdown(
-    """<style>
-    @import url('https://fonts.googleapis.com/css2?family=Heebo:wght@400;500;600;700&family=IBM+Plex+Mono:wght@400;500&display=swap');
-    :root {
-      --ink: #1C2321; --ink-2: #4A5551; --ink-3: #6B7470; --line: #E3E0D7; --line-2: #D4D0C4;
-      --paper: #FFFFFF; --canvas: #F7F6F2; --wash: #F2F0EA; --accent: #2D5F6B; --accent-ink: #1F4A54; --accent-soft: #E7EFF0;
-      --radius: 10px; --shadow: 0 1px 2px rgba(28, 35, 33, 0.04), 0 4px 14px rgba(31, 74, 84, 0.05);
-    }
-    /* ---------- בסיס: עברית מימין לשמאל, Heebo לכל הטקסט, מונוספייס רק לקודים ---------- */
-    html, body, [data-testid="stAppViewContainer"], [data-testid="stSidebar"], .main, .block-container {direction: rtl; text-align: right;}
-    html, body, .stApp, button, input, textarea, [data-testid="stMarkdownContainer"] {font-family: 'Heebo', sans-serif;}
-    .stApp {background: var(--canvas);}
-    code {font-family: 'IBM Plex Mono', monospace !important; direction: ltr; unicode-bidi: embed; background: var(--wash); color: var(--ink);
-          border-radius: 4px; padding: 1px 6px; font-size: 0.9em;}
-    .block-container {max-width: 1560px; padding: 1.1rem 2rem 3rem;}
-    [data-testid="stVerticalBlock"] {gap: 0.6rem;}
-    [data-testid="stHeading"], [data-testid="stHeading"] *, h1, h2, h3, h4, h5, [data-testid="stCaptionContainer"], [data-testid="stCaptionContainer"] *,
-    [data-testid="stMarkdownContainer"], [data-testid="stMarkdownContainer"] p {direction: rtl; text-align: right;}
-    [data-testid="stCaptionContainer"] {color: var(--ink-3);}
-    [data-testid="stToolbar"], [data-testid="stDeployButton"], .stDeployButton, #MainMenu, footer, header[data-testid="stHeader"] {display: none !important;}
-
-    /* ---------- כותרת: שורה אחת, קו הדגשה דק מימין ---------- */
-    .lab-header {display: flex; align-items: baseline; gap: 12px; flex-wrap: wrap; border-right: 3px solid var(--accent); padding: 0 12px 0 0; margin: 0 0 8px;}
-    .lab-header .title {font-size: 1.32rem; font-weight: 700; color: var(--ink); line-height: 1.25;}
-    .lab-header .org {font-size: 0.86rem; font-weight: 500; color: var(--accent);}
-    .lab-header .hint {font-size: 0.8rem; color: var(--ink-3); margin-inline-start: auto;}
-
-    /* ---------- סרגל הפעולה: שורה אחת נמוכה, כל הפקדים בגובה 40, נדבק לראש המסך בגלילה ---------- */
-    .st-key-action_card {position: sticky; top: 0.4rem; z-index: 100; background: var(--paper) !important; border: 1px solid var(--line) !important;
-          border-radius: var(--radius) !important; padding: 0.45rem 0.6rem !important; box-shadow: var(--shadow);}
-    .st-key-action_card [data-testid="stFileUploaderDropzone"] {padding: 0 0.6rem; min-height: 40px; height: 40px;}
-    .st-key-action_card [data-testid="stFileUploaderDropzone"] button {min-height: 30px; height: 30px; padding: 0 12px;}
-    .st-key-action_card .stButton > button, .st-key-action_card .stDownloadButton > button {height: 40px; min-height: 40px;}
-    .st-key-action_card [data-testid="stFileUploaderFile"] {margin-top: 2px;}
-
-    /* ---------- כפתורים והעלאה בצבעי הנושא ---------- */
-    .stButton > button, .stDownloadButton > button {border-radius: 8px; font-weight: 500; border: 1px solid var(--line-2); background: var(--paper); color: var(--ink); transition: border-color .15s, background .15s;}
-    .stButton > button:hover, .stDownloadButton > button:hover {border-color: var(--accent); color: var(--accent);}
-    .stButton > button[kind="primary"], .stDownloadButton > button[kind="primary"] {background: var(--accent); border-color: var(--accent); color: #fff;}
-    .stButton > button[kind="primary"]:hover, .stDownloadButton > button[kind="primary"]:hover {background: #244D58; border-color: #244D58; color: #fff;}
-    .stButton > button:disabled, .stDownloadButton > button:disabled {background: var(--wash); color: #A09D94; border-color: var(--line);}
-    [data-testid="stFileUploaderDropzone"] {background: var(--wash); border: 1px dashed #BDB9AC; border-radius: 8px;}
-    [data-testid="stFileUploaderDropzoneInstructions"] > div > span, [data-testid="stFileUploaderDropzoneInstructions"] small, [data-testid="stFileUploaderDropzoneInstructions"] svg {display: none;}
-    [data-testid="stFileUploaderDropzoneInstructions"] > div::before {content: "גררי לכאן קובץ PDF או תמונה (עד 25MB)"; font-size: 14px; color: var(--ink-2);}
-    [data-testid="stFileUploaderDropzone"] button, [data-testid="stFileUploaderDropzone"] button * {font-size: 0 !important;}
-    [data-testid="stFileUploaderDropzone"] button::after {content: "בחירת קובץ"; font-size: 13px !important;}
-    [data-testid="stAlert"] {border-radius: 8px;}
-    [data-testid="stAlert"] [data-testid="stMarkdownContainer"] p {font-size: 0.9rem;}
-
-    /* ---------- מדדים: פס אחד, תאים מופרדים בקו דק, בלי נקודות ובלי הערות (בטולטיפ) ---------- */
-    .kpis {display: grid; grid-template-columns: repeat(7, minmax(0, 1fr)); background: var(--paper); border: 1px solid var(--line);
-           border-radius: var(--radius); box-shadow: var(--shadow); overflow: hidden; margin: 2px 0 6px;}
-    .kpi {padding: 8px 16px 9px; min-width: 0; border-left: 1px solid var(--line); cursor: default;}
-    .kpi:last-child {border-left: none;}
-    .kpi .k-label {font-size: 0.74rem; font-weight: 500; color: var(--ink-3); white-space: nowrap; overflow: hidden; text-overflow: ellipsis;}
-    .kpi .k-value {font-size: 1.28rem; font-weight: 600; color: var(--tone); line-height: 1.2; white-space: nowrap; font-variant-numeric: tabular-nums;}
-    .kpi .k-value small {font-size: 0.8rem; font-weight: 500; color: var(--ink-3); margin-right: 3px;}
-    @media (max-width: 1100px) {.kpis {grid-template-columns: repeat(4, minmax(0, 1fr));} .kpi {border-bottom: 1px solid var(--line);}}
-
-    /* ---------- סרגל הסינון: שורה אחת, כפתורים במילוי רך לפי הסטטוס, מונה, ומתג פוקוס ---------- */
-    .st-key-toolbar {background: var(--paper) !important; border: 1px solid var(--line) !important; border-radius: var(--radius) !important;
-          box-shadow: var(--shadow); padding: 0.5rem 0.8rem !important;}
-    .st-key-status_filter [role="radiogroup"] {gap: 6px; flex-wrap: wrap;}
-    .st-key-status_filter button {--chip-bg: #F2F0EA; --chip-ink: var(--ink-2); --chip-on: var(--accent);
-          border: 1px solid transparent !important; border-radius: 999px !important; background: var(--chip-bg) !important; color: var(--chip-ink) !important;
-          padding: 0.3rem 0.95rem !important; min-height: 2.1rem; box-shadow: none !important; transition: background .15s, color .15s;}
-    .st-key-status_filter button p {color: inherit !important; font-size: 0.86rem; white-space: nowrap;}
-    .st-key-status_filter button p strong {font-weight: 700; opacity: .8;}
-    .st-key-status_filter button:nth-of-type(2) {--chip-bg: #EAF4EE; --chip-ink: #2E7D4F; --chip-on: #2E7D4F;}
-    .st-key-status_filter button:nth-of-type(3) {--chip-bg: #FBEFDF; --chip-ink: #8A561A; --chip-on: #B06A1E;}
-    .st-key-status_filter button:nth-of-type(4) {--chip-bg: #F4EDD3; --chip-ink: #6B5D1C; --chip-on: #8A7A22;}
-    .st-key-status_filter button:nth-of-type(5) {--chip-bg: #FFFFFF; --chip-ink: #6B7470; --chip-on: #6B7470; border: 1px dashed #CFCBBF !important;}
-    .st-key-status_filter button:hover {filter: brightness(0.97);}
-    .st-key-status_filter button[data-selected="true"] {background: var(--chip-on) !important; color: #FFFFFF !important; border-color: var(--chip-on) !important;}
-    .st-key-status_filter button[data-selected="true"] p strong {opacity: 1;}
-    .counter {font-size: 0.84rem; color: var(--ink-2); white-space: nowrap; text-align: center !important;}
-    .counter b {font-weight: 700; color: var(--ink);}
-    .counter span {display: block; font-size: 0.74rem; color: var(--ink-3);}
-    .st-key-focus_wrap {background: var(--accent-soft); border: 1px solid #CFDFE1; border-radius: 999px; padding: 5px 14px !important; width: fit-content; margin-inline-start: auto;}
-    .st-key-focus_wrap label p {font-size: 0.86rem !important; font-weight: 600 !important; color: var(--accent-ink) !important; white-space: nowrap;}
-
-    /* ---------- הטבלה ---------- */
-    [data-testid="stDataFrame"] {border: 1px solid var(--line); border-radius: var(--radius); background: var(--paper); box-shadow: var(--shadow); overflow: hidden;}
-    /* הרשת מצוירת על canvas משמאל לימין (סדר העמודות כבר הפוך בקוד). בלי זה ה-canvas יורש RTL מהדף, ו-"939068 ; 944004" מתהפך */
-    [data-testid="stDataFrame"], [data-testid="stDataFrame"] canvas {direction: ltr;}
-
-    /* ---------- פאנל הפירוט: כותרת, אזור ראיות נגלל, ופעולות שתמיד גלויות ---------- */
-    .st-key-detail_panel {background: var(--paper) !important; border: 1px solid var(--line) !important; border-top: 3px solid var(--accent) !important;
-          border-radius: var(--radius) !important; box-shadow: 0 2px 6px rgba(28,35,33,.05), 0 10px 30px rgba(31,74,84,.08); padding: 1rem 1.4rem 1.3rem !important; scroll-margin-top: 140px;}
-    .panel-head {display: flex; align-items: center; gap: 14px; flex-wrap: wrap;}
-    .panel-head .ph-eyebrow {font-size: 0.78rem; color: var(--ink-3);}
-    .panel-head .ph-title {font-size: 1.25rem; font-weight: 600; color: var(--ink); line-height: 1.3;}
-    .badge {flex: none; display: inline-flex; align-items: center; font-size: 0.78rem; font-weight: 500; padding: 3px 11px; border-radius: 999px; border: 1px solid;}
-    .badge.green {color: #2E7D4F; background: #EAF4EE; border-color: #CFE5D7;}
-    .badge.orange {color: #8A561A; background: #FBEFDF; border-color: #F0D9B8;}
-    .badge.yellow {color: #6B5D1C; background: #F4EDD3; border-color: #E4D8A8;}
-    .badge.confirmed {color: #2F5E8E; background: #E6EEF8; border-color: #C9D9EC;}
-    .badge.empty {color: #6B7470; background: var(--wash); border-color: var(--line);}
-    .panel-rule {height: 1px; background: var(--line); margin: 4px 0 6px;}
-    .col-label {font-size: 0.76rem; font-weight: 700; letter-spacing: .02em; color: var(--ink-3); margin-bottom: 2px;}
-    .st-key-detail_actions {background: #FCFBF8 !important; border: 1px solid var(--line) !important; border-radius: var(--radius) !important; padding: 0.9rem 1rem 1rem !important;}
-    .st-key-detail_actions [data-testid="stVerticalBlock"] {gap: 0.6rem;}
-    .st-key-detail_actions {position: sticky; top: 128px; z-index: 5;}     /* האישור נשאר גלוי בזמן שגוללים בראיות */
-    .st-key-detail_evidence [data-testid="stImage"] img, .st-key-detail_evidence [data-testid="stFullScreenFrame"] img {max-height: 560px; width: auto !important; max-width: 100%; object-fit: contain; border: 1px solid var(--line); border-radius: 6px;}
-    .st-key-detail_actions [data-testid="stAlert"] > div {padding: 0.5rem 0.85rem;}
-    .st-key-detail_actions [data-testid="stAlert"] [data-testid="stMarkdownContainer"] p {font-size: 0.86rem;}
-    .st-key-detail_actions [data-baseweb="input"], .st-key-detail_actions [data-baseweb="base-input"], .st-key-detail_actions .stTextInput input {background: var(--paper) !important;}
-    .st-key-detail_actions [data-baseweb="input"] {border: 1px solid var(--line-2);}
-    .st-key-detail_actions .stTextInput label p {font-size: 0.82rem; color: var(--ink-2);}
-    .st-key-detail_suggest .stButton > button {min-height: 2rem; padding: 2px 14px; border-radius: 999px; background: var(--accent-soft); border-color: #CFDFE1; color: var(--accent-ink);}
-    .st-key-detail_suggest .stButton > button:hover {background: #DCE8EA;}
-    .st-key-detail_evidence [data-testid="stSlider"] label p {font-size: 0.8rem; color: var(--ink-2);}
-    .st-key-detail_evidence [data-testid="stMarkdownContainer"] p {line-height: 1.7;}
-    .st-key-detail_panel [data-testid="stExpander"] {border: 1px solid var(--line); border-radius: 8px; background: var(--paper);}
-    .st-key-detail_panel [data-testid="stExpander"] summary p {font-size: 0.85rem;}
-    .placeholder {display: flex; align-items: baseline; gap: 10px; padding: 11px 16px; margin-bottom: 6px; color: var(--ink-3);
-          background: var(--paper); border: 1px dashed var(--line-2); border-radius: var(--radius); font-size: 0.86rem;}
-    .placeholder b {color: var(--ink); font-weight: 600; font-size: 0.9rem;}
-    .empty-filter {background: var(--paper); border: 1px solid var(--line); border-radius: var(--radius); padding: 28px; text-align: center; color: var(--ink-3);}
-    .empty-filter b {display: block; color: #2E7D4F; font-size: 1rem; margin-bottom: 4px;}
-    /* דגלים בפירוט: תגיות ענבר עדינות */
-    .flag {display: inline-flex; align-items: center; gap: 6px; margin: 2px 0 2px 6px; padding: 2px 10px; border-radius: 999px; color: #8A561A; background: #FBEFDF; border: 1px solid #F0D9B8; font-size: 0.8rem;}
-
-    /* ---------- מצב ריק ---------- */
-    .empty-state {background: var(--paper); border: 1px dashed var(--line-2); border-radius: var(--radius); padding: 40px 24px; text-align: center; color: var(--ink-3);}
-    .empty-state b {display: block; color: var(--ink); font-size: 1.02rem; font-weight: 600; margin-bottom: 6px;}
-    .empty-state p {text-align: center !important; margin: 0; font-size: 0.9rem;}
-
-    /* ---------- אזורים משניים בתחתית ---------- */
-    .st-key-secondary [data-testid="stExpander"] {border: 1px solid var(--line); border-radius: var(--radius); background: var(--paper);}
-    .st-key-secondary [data-testid="stExpander"] summary p {font-weight: 500; color: var(--ink-2);}
-    </style>""",
-    unsafe_allow_html=True,
-)
+ui.inject()
 
 
 # ---------- טעינה ועיבוד ----------
@@ -285,9 +151,7 @@ def style(df: pd.DataFrame, colors: pd.DataFrame):
     shown = text.where((colors == "") | (text != ""), "—")
 
     def css(c: str) -> str:
-        if c not in UI_TONE:
-            return "color: #6B7470; background-color: #FFFFFF"     # עמודת העמוד ותא ריק בלי דגל: רקע לבן אחיד
-        return f"color: {UI_TONE[c]}; background-color: {UI_FILL.get(c, '#FFFFFF')}" + ("; font-weight: 500" if c in UI_FILL else "")
+        return ui.table_cell_css(HEX_STATE.get(c))     # עמודת העמוד ותא ריק בלי דגל: טקסט נייטרלי על רקע לבן
 
     return shown.style.apply(lambda _: colors.map(css), axis=None)
 
