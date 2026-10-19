@@ -17,6 +17,6 @@ def test_zoom_scales_the_pixel_width_and_is_scrollable():
 
 
 def test_default_zoom_in_the_app_is_at_least_2x():
-    src = open("evidence_view.py", encoding="utf-8")   # הרכיב המשותף למסך העיבוד ולכרטיס הרשומה.read()
+    src = open("evidence_view.py", encoding="utf-8").read()      # הרכיב המשותף למסך העיבוד ולכרטיס הרשומה
     assert re.search(r'st\.slider\("הגדלה", 100, 600, (\d+)', src) and int(re.search(r'st\.slider\("הגדלה", 100, 600, (\d+)', src).group(1)) >= 200
     assert "zoom_html(crop, zoom)" in src
