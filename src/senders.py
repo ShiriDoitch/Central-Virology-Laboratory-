@@ -30,16 +30,46 @@ LAB_FUZZY = 0.8      # דמיון מינימלי לשם המעבדה (כתיב �
 CLOSE_SCORE = 0.5    # מועמד שני עם ניקוד >= חצי מהראשון = אי-הסכמה גם אם התפקיד "יעד"
 
 
+# קיפולי מילים גנריות (אחרי הסרת גרשיים): "המרכז הרפואי" = "מרכז רפואי", "בית החולים" / ביה"ח / בי"ח = "בית חולים". נעשה גם בכינויים
+# וגם בטקסט, ולכן רק מרחיב התאמות (הצורה עם ה' הידיעה והצורה בלעדיה שוות).
+_GENERIC_FOLD = ((re.compile(r"\bהמרכז\b"), "מרכז"), (re.compile(r"\bהרפואי\b"), "רפואי"), (re.compile(r"\bהחולים\b"), "חולים"),
+                 (re.compile(r"\b(?:ביהח|ביח)\b"), "בית חולים"))
+# מילים גנריות שאינן מבדילות בין מוסדות: ההשוואה המקורבת (fuzzy) ובדיקת שם המעבדה מתבססות על המילים המבדילות בלבד
+GENERIC_TOKENS = frozenset({"מרכז", "רפואי", "בית", "חולים", "ה", "המרכז", "הרפואי", "החולים", "ביהח", "ביח"})
+# מילות מפתח של מוסד (בצורה מנורמלת): כינוי דו-משמעי (שם פרטי / משפחה / רחוב / מילה רגילה) מותר רק כשאחת מהן באותו טקסט, או כשהאזכור הוא
+# לוגו / כותרת / חותמת
+INSTITUTION_KEYWORDS = ("קופת חולים", "מרכז רפואי", "בית חולים", "קופח", "ה מ")
+TRUSTED_WHERE = ("logo", "header", "stamp")
+
+
 def _norm(text: str) -> str:
     text = re.sub(r"[\"'״׳`]", "", text)            # גרשיים: רמב"ם -> רמבם
     text = re.sub(r"[.,\-־_/\\()]", " ", text)
-    return re.sub(r"\s+", " ", text).strip().lower()
+    text = re.sub(r"\s+", " ", text).strip().lower()
+    for rx, repl in _GENERIC_FOLD:
+        text = rx.sub(repl, text)
+    return text
+
+
+def _distinctive(n: str) -> list[str]:
+    """המילים המבדילות בטקסט מנורמל (בלי המילים הגנריות)."""
+    return [w for w in n.split() if w not in GENERIC_TOKENS]
+
+
+def _whole_word(alias: str, n: str) -> bool:
+    return re.search(rf"(?<!\w){re.escape(alias)}(?!\w)", n) is not None
+
+
+def _has_keyword(n: str) -> bool:
+    return any(re.search(rf"(?<!\S){re.escape(k)}(?!\S)", n) for k in INSTITUTION_KEYWORDS)
 
 
 class SenderMatcher:
     def __init__(self, canonical: dict[str, list[str]], branches: dict[str, str],
-                 lab_names: list[str], learned: dict[str, str] | None = None, hmos: list[str] | None = None):
-        self.hmos = frozenset(hmos or [])      # קופות החולים (config/senders.json: "hmos"), לכלל R1
+                 lab_names: list[str], learned: dict[str, str] | None = None, hmos: list[str] | None = None,
+                 ambiguous: list[str] | None = None):
+        self.hmos = frozenset(hmos or [])
+        self._ambiguous = frozenset(a for a in (_norm(x) for x in (ambiguous or [])) if a)    # כינויים דו-משמעיים (config/senders.json: "ambiguous")      # קופות החולים (config/senders.json: "hmos"), לכלל R1
         pairs: set[tuple[str, str]] = set()
         for canon, aliases in canonical.items():
             for a in [canon, *aliases]:
@@ -50,37 +80,59 @@ class SenderMatcher:
         self.canonical = set(canonical) | set((learned or {}).values()) | set(branches.values())
         self._pairs = sorted((p for p in pairs if p[0]), key=lambda p: -len(p[0]))  # הכינוי הארוך קודם
         self._labs = [_norm(n) for n in lab_names]
+        self._lab_distinct = [" ".join(_distinctive(lab)) for lab in self._labs]
 
-    def match(self, text: str) -> tuple[str | None, bool]:
-        """מחזיר (שם מהרשימה הסגורה או None, האם זה שם המעבדה המקבלת)."""
+    def _alias_allowed(self, alias: str, n: str, trusted: bool) -> bool:
+        """כינוי רגיל: מופיע כתת-מחרוזת. כינוי דו-משמעי: מילה שלמה, ורק אם האזכור מהימן (לוגו / כותרת / חותמת) או שיש בטקסט מילת מפתח של מוסד."""
+        if alias not in self._ambiguous:
+            return alias in n
+        return _whole_word(alias, n) and (trusted or _has_keyword(n))
+
+    def match(self, text: str, trusted: bool = False) -> tuple[str | None, bool]:
+        """מחזיר (שם מהרשימה הסגורה או None, האם זה שם המעבדה המקבלת).
+        trusted = האזכור הוא לוגו / כותרת / חותמת (ראו _alias_allowed; ההחלטה לפי where נעשית ב-decide_sender)."""
         n = _norm(text)
         for lab in self._labs:
             n = n.replace(lab, " ")
         n = re.sub(r"\s+", " ", n).strip()
         for alias, canon in self._pairs:
-            if alias in n:
+            if self._alias_allowed(alias, n, trusted):
                 return canon, False
-        if not n or any(SequenceMatcher(None, n, lab).ratio() >= LAB_FUZZY for lab in self._labs):
+        if not n:
+            return None, True
+        distinct = " ".join(_distinctive(n))
+        if distinct:     # שם המעבדה בכתיב רועש: משווים מילים מבדילות בלבד ("המרכז הרפואי זיו" אינו "המרכז הרפואי המשולב")
+            if any(ld and SequenceMatcher(None, distinct, ld).ratio() >= LAB_FUZZY for ld in self._lab_distinct):
+                return None, True
+        elif any(SequenceMatcher(None, n, lab).ratio() >= LAB_FUZZY for lab in self._labs):      # טקסט גנרי בלבד
             return None, True
         return None, False
 
-    def is_branch(self, text: str) -> bool:
+    def is_branch(self, text: str, trusted: bool = False) -> bool:
         """האם הטקסט מזכיר סניף/מוסד שממופה לקופת אם (config/senders.json: "branches"), כלומר ראיה למוסד ספציפי מתחת לקופה."""
         n = _norm(text)
-        return any(a in n for a in self._branch_aliases)
+        return any(self._alias_allowed(a, n, trusted) for a in self._branch_aliases)
 
-    def fuzzy(self, text: str) -> str | None:
-        """התאמה מקורבת כשאין התאמה מדויקת: רצף מילים בטקסט דומה (>= FUZZY_MIN) לכינוי (או לשם קנוני).
-        כינויים קצרים מ-FUZZY_MIN_ALIAS_LEN תווים לא משתתפים (שגיאת תו אחת בהם משנה את המילה).
-        מחזיר גורם אחד בלבד; אם כמה גורמים מתאימים באותו דמיון, או שאין אף אחד: None."""
-        words = _norm(text).split()
+    def fuzzy(self, text: str, trusted: bool = False) -> str | None:
+        """התאמה מקורבת כשאין התאמה מדויקת: רצף מילים מבדילות בטקסט דומה (>= FUZZY_MIN) למילים המבדילות של כינוי (או של שם קנוני).
+        המילים הגנריות (מרכז רפואי, בית חולים...) לא נספרות: אחרת הן שולטות בדמיון ("בני ציון" ו"זיו" נראים קרובים).
+        כינויים שהחלק המבדיל שלהם קצר מ-FUZZY_MIN_ALIAS_LEN תווים לא משתתפים (שגיאת תו אחת בהם משנה את המילה). כינוי דו-משמעי
+        כפוף לאותו כלל כמו בהתאמה מדויקת. מחזיר גורם אחד בלבד; אם כמה גורמים מתאימים באותו דמיון, או שאין אף אחד: None."""
+        n = _norm(text)
+        words = _distinctive(n)
+        if not words:
+            return None
         best: dict[str, float] = {}
         for alias, canon in self._pairs:
-            if len(alias) < FUZZY_MIN_ALIAS_LEN:
+            alias_words = _distinctive(alias)
+            joined = " ".join(alias_words)
+            if len(joined) < FUZZY_MIN_ALIAS_LEN:
                 continue
-            k = len(alias.split())
+            if (alias in self._ambiguous or joined in self._ambiguous) and not (trusted or _has_keyword(n)):
+                continue                       # גם שם קנוני שהחלק המבדיל שלו הוא מילה דו-משמעית (למשל "מרכז רפואי כרמל")
+            k = len(alias_words)
             for i in range(max(1, len(words) - k + 1)):
-                ratio = SequenceMatcher(None, " ".join(words[i:i + k]), alias).ratio()
+                ratio = SequenceMatcher(None, " ".join(words[i:i + k]), joined).ratio()
                 if ratio >= FUZZY_MIN:
                     best[canon] = max(best.get(canon, 0.0), ratio)
         if not best:
@@ -96,7 +148,7 @@ def load_matcher(config_dir: Path = CONFIG_DIR) -> SenderMatcher:
     aliases_path = config_dir / "aliases.json"
     learned = json.loads(aliases_path.read_text(encoding="utf-8")) if aliases_path.exists() else {}
     return SenderMatcher(cfg["canonical"], cfg.get("branches", {}), cfg.get("lab_names", []), learned,
-                         cfg.get("hmos", []))
+                         cfg.get("hmos", []), cfg.get("ambiguous", []))
 
 
 def add_alias(alias: str, canonical: str, config_dir: Path = CONFIG_DIR) -> None:
@@ -156,7 +208,8 @@ def decide_sender(mentions: list[SenderMention], matcher: SenderMatcher | None =
     fuzzy_texts: dict[str, list[str]] = {}   # גורם -> הטקסטים שהותאמו אליו בהתאמה מקורבת
     exact_canons: set[str] = set()           # גורמים שיש להם לפחות אזכור אחד בהתאמה מדויקת
     for m in mentions:
-        canon, is_lab = matcher.match(m.text)
+        trusted = m.where in TRUSTED_WHERE            # לוגו / כותרת / חותמת: מספיקים כדי להתיר כינוי דו-משמעי (אחרת דרושה מילת מפתח)
+        canon, is_lab = matcher.match(m.text, trusted)
         if is_lab:
             continue
         if m.where == "patient_field":
@@ -165,7 +218,7 @@ def decide_sender(mentions: list[SenderMention], matcher: SenderMatcher | None =
             continue
         is_fuzzy = False
         if canon is None and m.role != "destination":
-            canon = matcher.fuzzy(m.text)
+            canon = matcher.fuzzy(m.text, trusted)
             is_fuzzy = canon is not None
         if canon is None:
             if m.role != "destination":
@@ -208,7 +261,7 @@ def decide_sender(mentions: list[SenderMention], matcher: SenderMatcher | None =
         if disagree and F_CONFLICT not in flags:
             flags.append(F_CONFLICT)
     ev = evidence[top]
-    branch_texts = [m.text for m in ev if top in matcher.hmos and matcher.is_branch(m.text)]
+    branch_texts = [m.text for m in ev if top in matcher.hmos and matcher.is_branch(m.text, m.where in TRUSTED_WHERE)]
     if branch_texts and F_CONFLICT not in flags:
         # קופה שנבחרה, אבל בטופס יש גם ראיה למוסד ספציפי מתחתיה (חותמת/כותרת של בית חולים): השולח האמיתי כנראה המוסד
         # ולא הקופה, ואין לקוד דרך לדעת איזה משניהם נכון: כתום, והמוסד נשמר כחלופה
