@@ -11,6 +11,7 @@ import streamlit as st
 
 from src.confirm import FIELD_REGION, field_crop, flag_chips_html, md_code, md_text, name_suggestions, override_key, set_override, zoom_html
 from src.export import COLUMNS, CONFIRMED, FIELD_KEYS, GREEN, ORANGE, YELLOW, _readings, build_rows, build_workbook, pass2_issues, skip_reason
+from src import service
 from src.intake import pdf_to_images, rotate_jpeg
 from src.schema import PageExtraction
 from src.privacy import GENERIC_ERROR_HE, log_server_error
@@ -83,6 +84,11 @@ FLAG_HE = {
     "center_from_barcode_only": "המרכזי נקרא מהברקוד בלבד (המודל לא מצא), לבדיקה",
     "center_barcode_extra": "הברקוד מכיל מרכזיים נוספים שהמודל לא קרא, לבדיקה",
 }
+
+
+def db():
+    """חיבור חדש למסד הנתונים (SQLite זול לפתיחה, ואובייקט שלא בשימוש נסגר מיד). ה-SQL כולו ב-src/repo.py."""
+    return service.open_connection()
 
 
 def he_flag(code: str, key: str | None = None) -> str:
@@ -540,17 +546,31 @@ if run_clicked and upload is not None:
     elif not os.getenv("GEMINI_API_KEY") and not Path(".env").exists():
         st.error("חסר GEMINI_API_KEY בקובץ .env")
     else:
-        bar = progress_slot.progress(0.0, text="מתחיל")
+        data = upload.getvalue()
         try:
-            st.session_state["pages"], st.session_state["images"], st.session_state["field_crops"] = process_upload(
-                upload.name, upload.getvalue(), bar)
-            st.session_state["is_sample"] = False
-            st.session_state["name_overrides"] = {}
-        except UploadRejected as e:                      # הודעה שכתבנו בעצמנו (למשל יותר מדי עמודים), בלי טקסט מהקובץ
-            st.error(str(e))
+            existing = service.find_completed_upload(db(), data)
         except Exception as e:
-            log_server_error("process_upload", e)         # הפרטים האמיתיים רק במסוף השרת
-            st.error(GENERIC_ERROR_HE)
+            log_server_error("find_completed_upload", e)
+            existing = None
+        if existing:       # אותו קובץ (sha256) כבר עובד: פותחים את הרשומות השמורות במקום לעבד שוב (בלי קריאות API)
+            st.session_state.update(upload_id=existing["id"], pages=None, images={}, field_crops={}, name_overrides={}, is_sample=False)
+            st.info(f"הקובץ \"{existing['filename']}\" כבר עובד בעבר ({existing['record_count']} רשומות). הרשומות השמורות נטענו; לא בוצע עיבוד מחדש.")
+        else:
+            bar = progress_slot.progress(0.0, text="מתחיל")
+            store = service.Persister(db(), upload.name, data)
+            try:
+                st.session_state["pages"], st.session_state["images"], st.session_state["field_crops"] = process_upload(
+                    upload.name, data, bar, store=store)
+                st.session_state["is_sample"] = False
+                st.session_state["name_overrides"] = {}
+                st.session_state["upload_id"] = store.upload_id
+                if store.errors:
+                    st.warning(f"השמירה למסד הנתונים נכשלה ב-{store.errors} עמודים (פרטים במסוף השרת). התוצאות מוצגות אך לא נשמרו במלואן.")
+            except UploadRejected as e:                      # הודעה שכתבנו בעצמנו (למשל יותר מדי עמודים), בלי טקסט מהקובץ
+                st.error(str(e))
+            except Exception as e:
+                log_server_error("process_upload", e)         # הפרטים האמיתיים רק במסוף השרת
+                st.error(GENERIC_ERROR_HE)
 
 pages = st.session_state.get("pages")
 images = st.session_state.get("images", {})

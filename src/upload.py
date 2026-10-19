@@ -50,8 +50,9 @@ def to_pdf_bytes(name: str, data: bytes) -> bytes:
     return pymupdf.open(stream=buf.getvalue(), filetype="jpeg").convert_to_pdf()
 
 
-def process_upload(name: str, data: bytes, progress) -> tuple[list[dict], dict[int, bytes], dict[int, bytes | None]]:
-    """מריץ את הצינור המלא (שני מעברים) על כל עמוד. הקובץ הזמני נמחק בסיום; אין שמירה של PII."""
+def process_upload(name: str, data: bytes, progress, store=None) -> tuple[list[dict], dict[int, bytes], dict[int, bytes | None]]:
+    """מריץ את הצינור המלא (שני מעברים) על כל עמוד. הקובץ הזמני נמחק בסיום.
+    store (אופציונלי, src/service.Persister): מקבל start(מספר עמודים), page(תוצאת עמוד) אחרי כל עמוד, ו-finish() בסוף."""
     from src.pipeline import process_page  # ייבוא מאוחר: טעינת הדוגמה לא דורשת מפתח API
 
     pdf_bytes = to_pdf_bytes(name, data)
@@ -65,6 +66,8 @@ def process_upload(name: str, data: bytes, progress) -> tuple[list[dict], dict[i
         if total > MAX_PAGES:
             raise UploadRejected(f"הקובץ כולל {total} עמודים (מקסימום {MAX_PAGES})")
         pages, images, crops = [], {}, {}
+        if store is not None:
+            store.start(total)
         for p in range(1, total + 1):
             progress.progress((p - 1) / total, text=f"מעבד עמוד {p} מתוך {total}")
             try:
@@ -75,6 +78,8 @@ def process_upload(name: str, data: bytes, progress) -> tuple[list[dict], dict[i
             if not (res.get("pass1") or {}).get("ok"):
                 log_server_error(f"extract page {p}", (res.get("pass1") or {}).get("error"))     # תגובת ה-API המלאה: רק בשרת
             pages.append(res)
+            if store is not None:
+                store.page(res)
             img = pdf_to_images(tmp, dpi=110, pages=[p])[0]
             applied = (res.get("rotation") or {}).get("applied")
             images[p] = rotate_jpeg(img, applied) if applied else img
@@ -82,6 +87,8 @@ def process_upload(name: str, data: bytes, progress) -> tuple[list[dict], dict[i
                 for region in dict.fromkeys(FIELD_REGION.values()):         # patient / barcode / commitment / receipt
                     key = next(k for k, r in FIELD_REGION.items() if r == region)
                     crops[(p, region)] = field_crop(tmp, res, key)
+        if store is not None:
+            store.finish()
         progress.progress(1.0, text="הסתיים")
         return pages, images, crops
     finally:
