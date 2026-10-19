@@ -258,11 +258,14 @@ def edit_field(conn, record_id: int, field: str, value: str, *, expected_version
         _touch(conn, record_id)
 
 
-def revert_field(conn, record_id: int, field: str, *, color: str, expected_version: int | None = None) -> None:
-    """ביטול אישור / תיקון: חוזרים לערך המכונה. color = הצבע שהמכונה נתנה (נשמר ע"י הקורא כי הוא נגזר מתא מלא)."""
+def revert_field(conn, record_id: int, field: str, *, color: str | None = None, expected_version: int | None = None) -> None:
+    """ביטול אישור / תיקון: חוזרים לערך המכונה. color = הצבע שהמכונה נתנה (הקורא שמחשב אותו מתוצאת העמוד מעביר אותו; בלעדיו
+    הצבע נגזר מהדגלים והערך השמורים: דגל = orange, ערך = green, אחרת empty; צהוב אינו ניתן לשחזור מכאן)."""
     with conn:
         _load(conn, record_id, expected_version)
-        st = conn.execute("SELECT machine_value FROM field_states WHERE record_id=? AND field=?", (record_id, field)).fetchone()
+        st = conn.execute("SELECT machine_value, flags_json FROM field_states WHERE record_id=? AND field=?", (record_id, field)).fetchone()
+        if color is None:
+            color = "orange" if json.loads(st["flags_json"]) else ("green" if st["machine_value"] else "empty")
         old = _final_value(conn, record_id, field)
         _write_final(conn, record_id, field, st["machine_value"])
         conn.execute("UPDATE field_states SET human_edited=0, cell_confirmed=0, color=? WHERE record_id=? AND field=?",

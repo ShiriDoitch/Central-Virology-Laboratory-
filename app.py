@@ -11,6 +11,7 @@ import streamlit as st
 
 from src.confirm import FIELD_REGION, field_crop, flag_chips_html, md_code, md_text, name_suggestions, override_key, set_override, zoom_html
 from src.export import COLUMNS, CONFIRMED, FIELD_KEYS, GREEN, ORANGE, YELLOW, _readings, build_rows, build_workbook, pass2_issues, skip_reason
+import records_screen
 from src import service
 from src.intake import pdf_to_images, rotate_jpeg
 from src.schema import PageExtraction
@@ -578,6 +579,15 @@ st.markdown(
     unsafe_allow_html=True,
 )
 
+_goto = st.session_state.pop("_goto_records", None)
+if _goto:                                              # קובץ שכבר עובד: עוברים למסך הרשומות, מסוננות לקובץ הזה
+    st.session_state["view"], st.session_state["rec_upload"] = "records", _goto
+VIEWS = {"process": "עיבוד ובדיקה", "records": "רשומות שמורות"}
+st.segmented_control("מסך", list(VIEWS), default="process", key="view", format_func=VIEWS.get, label_visibility="collapsed")
+_notice = st.session_state.pop("_notice", None)
+if _notice:
+    st.info(_notice)
+
 with st.container(border=True, key="action_card"):         # כרטיס פעולה אחד: העלאה, עיבוד, דוגמה והורדת אקסל (נדבק לראש המסך בגלילה)
     up_col, run_col, sample_col, dl_col = st.columns([4.4, 1, 1.4, 1.2], vertical_alignment="center", gap="small")
     with up_col:
@@ -611,7 +621,9 @@ if run_clicked and upload is not None:
             existing = None
         if existing:       # אותו קובץ (sha256) כבר עובד: פותחים את הרשומות השמורות במקום לעבד שוב (בלי קריאות API)
             st.session_state.update(upload_id=existing["id"], pages=None, images={}, field_crops={}, name_overrides={}, is_sample=False)
-            st.info(f"הקובץ \"{existing['filename']}\" כבר עובד בעבר ({existing['record_count']} רשומות). הרשומות השמורות נטענו; לא בוצע עיבוד מחדש.")
+            st.session_state["_notice"] = f"הקובץ \"{existing['filename']}\" כבר עובד בעבר ({existing['record_count']} רשומות). הרשומות השמורות נטענו; לא בוצע עיבוד מחדש."
+            st.session_state["_goto_records"] = existing["id"]
+            st.rerun()
         else:
             bar = progress_slot.progress(0.0, text="מתחיל")
             store = service.Persister(db(), upload.name, data)
@@ -628,6 +640,10 @@ if run_clicked and upload is not None:
             except Exception as e:
                 log_server_error("process_upload", e)         # הפרטים האמיתיים רק במסוף השרת
                 st.error(GENERIC_ERROR_HE)
+
+if st.session_state.get("view") == "records":
+    records_screen.render(db, he_flag)
+    st.stop()
 
 pages = st.session_state.get("pages")
 images = st.session_state.get("images", {})

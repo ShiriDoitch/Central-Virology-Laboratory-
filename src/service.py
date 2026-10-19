@@ -1,9 +1,11 @@
 """שכבת שירות בין הצינור / הממשק לבין src/repo.py: ממירה שורות ייצוא (ExportRow) לרשומות מסד נתונים ובחזרה.
 אין כאן SQL ואין Streamlit. כל כשל כתיבה נרשם בשרת (בלי PII) ולא מפיל עיבוד שכבר רץ."""
 import hashlib
+from dataclasses import dataclass, field
 
 from . import repo
-from .export import FIELD_KEYS, NAME_KEYS, Cell, build_rows
+from .confirm import normalize_override
+from .export import FIELD_KEYS, Cell, build_rows
 from .privacy import log_server_error
 
 
@@ -138,3 +140,49 @@ def unapprove_row(conn, record_id: int) -> None:
 
 def status_counts(conn, upload_id: int | None = None) -> dict[str, int]:
     return repo.status_counts(conn, upload_id)
+
+
+# ---------- מסך הרשומות (שלב 4) ----------
+
+@dataclass
+class RecordFilter:
+    """מסנני מסך הרשומות; גם הייצוא משתמש באותו אובייקט (מה שרואים הוא מה שמיוצא). תאריכים בפורמט dd.mm.yyyy."""
+    search: str = ""
+    statuses: list[str] = field(default_factory=list)
+    senders: list[str] = field(default_factory=list)
+    date_from: str | None = None
+    date_to: str | None = None
+    upload_id: int | None = None
+    sort: str = "page"
+    descending: bool = False
+
+
+def query(conn, flt: RecordFilter, limit: int | None = 50, offset: int = 0) -> tuple[list[dict], int]:
+    return repo.search_records(conn, search=flt.search, statuses=flt.statuses, senders=flt.senders, date_from=flt.date_from,
+                               date_to=flt.date_to, upload_id=flt.upload_id, sort=flt.sort, descending=flt.descending,
+                               limit=limit, offset=offset)
+
+
+def record_detail(conn, record_id: int) -> dict | None:
+    rec = repo.get_record(conn, record_id)
+    if rec:
+        rec["audit"] = repo.audit_entries(conn, record_id)
+    return rec
+
+
+def edit_record_field(conn, record_id: int, key: str, text: str, expected_version: int | None = None) -> None:
+    """תיקון מהמסך: מנורמל ומאומת לשדה (כמו בכרטיס הבדיקה). ערך לא תקין: ValueError ושום דבר לא נכתב."""
+    if key not in FIELD_KEYS:
+        raise ValueError(f"unknown field {key!r}")
+    value = normalize_override(key, text)
+    if not value:
+        raise ValueError(f"invalid value for {key}")
+    repo.edit_field(conn, record_id, key, value, expected_version=expected_version)
+
+
+def revert_record_field(conn, record_id: int, key: str, expected_version: int | None = None) -> None:
+    repo.revert_field(conn, record_id, key, expected_version=expected_version)
+
+
+def filter_options(conn) -> dict:
+    return {"senders": repo.list_senders(conn), "uploads": repo.list_uploads(conn), "counts": repo.status_counts(conn)}
