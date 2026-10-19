@@ -125,3 +125,65 @@ def test_process_upload_calls_store_hooks(monkeypatch, tmp_path):
     monkeypatch.setattr(upload, "UPLOAD_TMP_DIR", tmp_path)
     upload.process_upload("a.pdf", pdf, Bar(), store=Store())
     assert calls == [("start", 2), ("page", 1), ("page", 2), ("finish",)]
+
+
+# ---------- שלב 3 ----------
+
+def first_rows(conn, pages, store):
+    p = next(p for p in pages if len(build_rows(p)) >= 1)
+    return p, build_rows(p)
+
+
+def test_save_override_roundtrip_and_load(conn):
+    pages = saved_pages()
+    store = persist(conn, pages)
+    p, rows = first_rows(conn, pages, store)
+    service.save_override(conn, store.upload_id, p["page"], "sender", "ידני", p)
+    service.save_override(conn, store.upload_id, p["page"], "commitment#0", "5551234", p)
+    ov = service.load_overrides(conn, store.upload_id)
+    assert ov[(p["page"], "sender")] == "ידני" and ov[(p["page"], "commitment#0")] == "5551234"
+    rid = repo.find_record(conn, store.upload_id, p["page"], 0)
+    assert repo.get_record(conn, rid)["commitment_no"] == "5551234"
+
+
+def test_clear_override_restores_machine_value_and_color(conn):
+    pages = saved_pages()
+    store = persist(conn, pages)
+    p, rows = first_rows(conn, pages, store)
+    before = repo.get_record(conn, repo.find_record(conn, store.upload_id, p["page"], 0))
+    service.save_override(conn, store.upload_id, p["page"], "date", "01.01.2026", p)
+    service.save_override(conn, store.upload_id, p["page"], "date", None, p)
+    after = repo.get_record(conn, before["id"])
+    assert after["receipt_date"] == before["receipt_date"]
+    assert after["fields"]["date"]["color"] == before["fields"]["date"]["color"]
+    assert (p["page"], "date") not in service.load_overrides(conn, store.upload_id)
+
+
+def test_page_level_override_applies_to_every_row_of_page(conn):
+    pages = saved_pages()
+    store = persist(conn, pages)
+    multi = next((p for p in pages if len(build_rows(p)) > 1), None)
+    if multi is None:
+        pytest.skip("אין עמוד עם כמה שורות בריצה")
+    assert service.save_override(conn, store.upload_id, multi["page"], "id", "123456", multi) == len(build_rows(multi))
+
+
+def test_approved_row_blocks_ui_edits_and_survives(conn):
+    pages = saved_pages()
+    store = persist(conn, pages)
+    p, _ = first_rows(conn, pages, store)
+    info = service.row_info(conn, store.upload_id, p["page"], 0)
+    service.approve_row(conn, info["id"])
+    with pytest.raises(service.RecordLocked):
+        service.save_override(conn, store.upload_id, p["page"], "sender", "x", p)
+    assert service.row_info(conn, store.upload_id, p["page"], 0)["status"] == "approved"
+    service.unapprove_row(conn, info["id"])
+    service.save_override(conn, store.upload_id, p["page"], "sender", "x", p)
+
+
+def test_unknown_field_rejected(conn):
+    pages = saved_pages()
+    store = persist(conn, pages)
+    p, _ = first_rows(conn, pages, store)
+    with pytest.raises(ValueError):
+        service.save_override(conn, store.upload_id, p["page"], "bogus", "x", p)

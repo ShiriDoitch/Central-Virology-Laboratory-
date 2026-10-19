@@ -75,3 +75,66 @@ def find_completed_upload(conn, data: bytes) -> dict | None:
 
 def open_connection():
     return repo.connect()
+
+
+# ---------- תיקונים ואישורים (שלב 3) ----------
+
+RecordLocked = repo.RecordLocked
+StaleVersion = repo.StaleVersion
+COMMITMENT_PREFIX = "commitment#"
+
+
+def _targets(conn, upload_id: int, page: int, okey: str) -> tuple[str, list[dict]]:
+    """(שדה, רשומות) שמושפעות ממפתח אישור של הממשק: התחייבות לפי שורה, כל שדה אחר חל על כל השורות בעמוד."""
+    recs = repo.page_records(conn, upload_id, page)
+    if okey.startswith(COMMITMENT_PREFIX):
+        ordinal = int(okey[len(COMMITMENT_PREFIX):])
+        return "commitment", [r for r in recs if r["ordinal"] == ordinal]
+    if okey not in FIELD_KEYS:
+        raise ValueError(f"unknown field {okey!r}")
+    return okey, recs
+
+
+def save_override(conn, upload_id: int, page: int, okey: str, value: str | None, page_result: dict) -> int:
+    """כותב לאחר תיקון / אישור / ביטול אישור של תא בממשק. value=None מחזיר לערך המכונה (הצבע שלה מחושב מחדש מתוצאת העמוד).
+    אם אחת הרשומות מאושרת: RecordLocked ושום דבר לא נכתב. מחזיר כמה רשומות עודכנו."""
+    field, recs = _targets(conn, upload_id, page, okey)
+    if any(r["status"] == "approved" for r in recs):
+        raise RecordLocked(f"page {page}: a row is approved")
+    machine = {er.index: er for er in machine_rows(page_result)}
+    for r in recs:
+        if value:
+            repo.edit_field(conn, r["id"], field, value)
+        else:
+            repo.revert_field(conn, r["id"], field, color=cell_color(machine[r["ordinal"]].cells[field]))
+    return len(recs)
+
+
+def load_overrides(conn, upload_id: int) -> dict:
+    """אישורי המשתמש השמורים, בצורה שהממשק משתמש בה: {(עמוד, שדה | "commitment#<שורה>"): ערך}."""
+    out: dict = {}
+    for r in repo.search_records(conn, upload_id=upload_id, limit=None)[0]:
+        full = repo.get_record(conn, r["id"])
+        for field, st in full["fields"].items():
+            if st["cell_confirmed"]:
+                key = f"{COMMITMENT_PREFIX}{r['ordinal']}" if field == "commitment" else field
+                out[(r["page_no"], key)] = full["center"] if field == "center" else full[repo.FIELD_COLUMN[field]]
+    return out
+
+
+def row_info(conn, upload_id: int, page: int, ordinal: int) -> dict | None:
+    rid = repo.find_record(conn, upload_id, page, ordinal)
+    rec = repo.get_record(conn, rid) if rid else None
+    return {"id": rid, "status": rec["status"], "version": rec["version"]} if rec else None
+
+
+def approve_row(conn, record_id: int) -> None:
+    repo.approve_record(conn, record_id)
+
+
+def unapprove_row(conn, record_id: int) -> None:
+    repo.unapprove_record(conn, record_id)
+
+
+def status_counts(conn, upload_id: int | None = None) -> dict[str, int]:
+    return repo.status_counts(conn, upload_id)

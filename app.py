@@ -356,26 +356,65 @@ def crop_for(page_res: dict, key: str) -> bytes | None:
     return crops.get(token)
 
 
+def _page_result(page: int) -> dict | None:
+    return next((p for p in st.session_state.get("pages") or [] if p["page"] == page), None)
+
+
+def _apply(page: int, okey: str, value: str | None) -> bool:
+    """אישור / ביטול אישור של תא: קודם מאומת ונשמר במסד הנתונים (אם יש העלאה שמורה), ורק אז מתעדכן מצב הסשן.
+    שורה מאושרת נעולה: מציג הודעה ולא משנה כלום. ערך לא תקין לשדה: ValueError (האישור הקודם נשאר)."""
+    overrides = st.session_state.setdefault("name_overrides", {})
+    prev = overrides.get((page, okey))
+    set_override(overrides, page, okey, value)
+    upload_id = st.session_state.get("upload_id")
+    if upload_id and not st.session_state.get("is_sample"):
+        try:
+            service.save_override(db(), upload_id, page, okey, overrides.get((page, okey)), _page_result(page))
+        except service.RecordLocked:
+            if prev is None:
+                overrides.pop((page, okey), None)
+            else:
+                overrides[(page, okey)] = prev
+            st.session_state[f"locked_{page}"] = True
+            return False
+        except Exception as e:
+            log_server_error("save_override", e)
+            st.session_state["db_error"] = True
+    st.session_state.pop(f"locked_{page}", None)
+    return True
+
+
 def _choose(page: int, okey: str, value: str) -> None:
     """לחיצה על הצעה: הערך נשמר כערך הסופי (אישור משתמש) ומוצג גם בשדה ההקלדה."""
-    set_override(st.session_state.setdefault("name_overrides", {}), page, okey, value)
-    st.session_state[f"txt_{page}_{okey}"] = value
+    if _apply(page, okey, value):
+        st.session_state[f"txt_{page}_{okey}"] = value
 
 
 def _confirm_typed(page: int, okey: str) -> None:
     text = st.session_state.get(f"txt_{page}_{okey}", "")
     try:
-        set_override(st.session_state.setdefault("name_overrides", {}), page, okey, text)
-        st.session_state[f"txt_{page}_{okey}"] = st.session_state["name_overrides"].get((page, okey), "")
+        if _apply(page, okey, text):
+            st.session_state[f"txt_{page}_{okey}"] = st.session_state["name_overrides"].get((page, okey), "")
         st.session_state.pop(f"err_{page}_{okey}", None)
     except ValueError:
         st.session_state[f"err_{page}_{okey}"] = True      # ערך לא תקין לשדה: האישור הקודם לא משתנה
 
 
 def _clear(page: int, okey: str) -> None:
-    set_override(st.session_state.setdefault("name_overrides", {}), page, okey, None)
-    st.session_state[f"txt_{page}_{okey}"] = ""
+    if _apply(page, okey, None):
+        st.session_state[f"txt_{page}_{okey}"] = ""
     st.session_state.pop(f"err_{page}_{okey}", None)
+
+
+def _approve_row(record_id: int) -> None:
+    service.approve_row(db(), record_id)
+
+
+def _unapprove_row(record_id: int) -> None:
+    service.unapprove_row(db(), record_id)
+
+
+STATUS_HE = {"pending": "ממתינה לבדיקה", "ready": "מוכנה לאישור", "approved": "אושרה"}
 
 
 INPUT_HINTS = {"id": 'ספרות בלבד', "commitment": "ספרות בלבד", "center": "ספרות; כמה ערכים מופרדים ב-;", "date": "dd.mm.yyyy"}
@@ -438,13 +477,16 @@ def render_evidence(page_res: dict, er, key: str, image: bytes | None) -> None:
         st.text(f"מעבר ראשון: {p1 or '—'}\nמעבר שני: {p2 or '—'}")
 
 
-def render_confirmation(page_res: dict, er, key: str) -> None:
+def render_confirmation(page_res: dict, er, key: str, locked: bool = False) -> None:
     """צד הפעולות: מצב הערך, הצעות כלחצנים (גם כשהתא ריק), הקלדה חופשית וכפתורי האישור.
     ערך שהוקלד או נבחר נשמר כערך סופי ומיוצא כ"אושר על ידי המשתמש" (כחול). בלי אישור, שם בכתב יד נשאר כתום."""
     cell, page = er.cells[key], er.page
     okey = override_key(key, er.index)
     overrides = st.session_state.setdefault("name_overrides", {})
     st.markdown("<div class='col-label'>אישור הערך</div>", unsafe_allow_html=True)
+    if locked or st.session_state.get(f"locked_{page}"):
+        st.warning("השורה אושרה ולכן נעולה לשינוי. כדי לתקן, בטלי קודם את אישור השורה (למעלה).")
+        locked = True
     if cell.confirmed:
         st.success(f"אושר על ידי המשתמש: {md_text(cell.value)}")
     elif cell.yellow:
@@ -460,20 +502,20 @@ def render_confirmation(page_res: dict, er, key: str) -> None:
             st.caption("אחרי הערך שנקרא: החלפת ספרה אחת בזוגות מבולבלים שעוברת את ספרת הביקורת. אין תיקון אוטומטי.")
         with st.container(horizontal=True, gap="small", key="detail_suggest"):
             for i, sug in enumerate(suggestions):
-                st.button(md_text(sug), key=f"sg_{page}_{okey}_{i}", on_click=_choose, args=(page, okey, sug))
+                st.button(md_text(sug), key=f"sg_{page}_{okey}_{i}", on_click=_choose, args=(page, okey, sug), disabled=locked)
     elif key in NAME_KEYS:
         st.warning(NOT_READ_TEXT)
     else:
         st.caption("אין הצעות לשדה הזה. אפשר להקליד ערך.")
     txt_key = f"txt_{page}_{okey}"
     st.session_state.setdefault(txt_key, overrides.get((page, okey), ""))
-    st.text_input("או הקלדה ידנית" + (f" ({INPUT_HINTS[key]})" if key in INPUT_HINTS else ""), key=txt_key)
+    st.text_input("או הקלדה ידנית" + (f" ({INPUT_HINTS[key]})" if key in INPUT_HINTS else ""), key=txt_key, disabled=locked)
     if st.session_state.get(f"err_{page}_{okey}"):
         st.error("הערך לא תקין לשדה הזה, לא נשמר" + (f" ({INPUT_HINTS[key]})" if key in INPUT_HINTS else ""))
     ok_slot, clear_slot = st.columns([3, 2]) if cell.confirmed else (st.container(), None)
-    ok_slot.button("אשרי את הערך שהוקלד", key=f"ok_{page}_{okey}", on_click=_confirm_typed, args=(page, okey), type="primary", width="stretch")
+    ok_slot.button("אשרי את הערך שהוקלד", key=f"ok_{page}_{okey}", on_click=_confirm_typed, args=(page, okey), type="primary", width="stretch", disabled=locked)
     if clear_slot is not None:                           # פעולה משנית: כפתור שקט לצד הכפתור הראשי
-        clear_slot.button("בטלי אישור", key=f"clr_{page}_{okey}", on_click=_clear, args=(page, okey), width="stretch")
+        clear_slot.button("בטלי אישור", key=f"clr_{page}_{okey}", on_click=_clear, args=(page, okey), width="stretch", disabled=locked)
 
 
 def render_detail(page_res: dict, er, key: str, image: bytes | None, row_i: int, n_rows: int, nxt, hidden: bool) -> None:
@@ -489,6 +531,20 @@ def render_detail(page_res: dict, er, key: str, image: bytes | None, row_i: int,
     nav_next.button("לבדיקה הבאה ←", key="next_cell", on_click=_select, args=(nxt,), disabled=nxt is None, width="stretch",
                     help="התא הבא שדורש בדיקה (כתום, צהוב או ריק)")
     nav_close.button("סגירה", key="close_detail", on_click=_select, args=(None,), width="stretch")
+    info = None
+    if st.session_state.get("upload_id") and not st.session_state.get("is_sample"):
+        try:
+            info = service.row_info(db(), st.session_state["upload_id"], er.page, er.index)
+        except Exception as e:
+            log_server_error("row_info", e)
+    if info:
+        st_col, btn_col = st.columns([4, 1.6], vertical_alignment="center")
+        st_col.caption(f"סטטוס השורה: **{STATUS_HE[info['status']]}**")
+        if info["status"] == "approved":
+            btn_col.button("בטלי אישור שורה", key=f"unappr_{info['id']}", on_click=_unapprove_row, args=(info["id"],), width="stretch")
+        else:
+            btn_col.button("אשרי שורה", key=f"appr_{info['id']}", on_click=_approve_row, args=(info["id"],), type="primary", width="stretch",
+                           help="מסמן את כל השורה כבדוקה. שורה מאושרת נעולה ולא נדרסת בעיבוד חוזר.")
     st.markdown("<div class='panel-rule'></div>", unsafe_allow_html=True)
     ev_col, act_col = st.columns([1.45, 1], gap="large")       # RTL: הראיות מימין, האישור משמאל
     with ev_col:
@@ -496,7 +552,7 @@ def render_detail(page_res: dict, er, key: str, image: bytes | None, row_i: int,
             render_evidence(page_res, er, key, image)
     with act_col:
         with st.container(key="detail_actions"):
-            render_confirmation(page_res, er, key)
+            render_confirmation(page_res, er, key, locked=bool(info and info["status"] == "approved"))
 
 
 def kpi_cards(items) -> str:
@@ -536,6 +592,7 @@ if sample_clicked:
     try:
         st.session_state["pages"], st.session_state["images"] = load_sample()
         st.session_state["is_sample"] = True
+        st.session_state["upload_id"] = None                 # הדוגמה היא לדמו בלבד ואינה נשמרת במסד הנתונים
         st.session_state["field_crops"], st.session_state["name_overrides"] = {}, {}
     except Exception as e:
         log_server_error("load_sample", e)
@@ -562,8 +619,8 @@ if run_clicked and upload is not None:
                 st.session_state["pages"], st.session_state["images"], st.session_state["field_crops"] = process_upload(
                     upload.name, data, bar, store=store)
                 st.session_state["is_sample"] = False
-                st.session_state["name_overrides"] = {}
                 st.session_state["upload_id"] = store.upload_id
+                st.session_state["name_overrides"] = service.load_overrides(db(), store.upload_id) if store.upload_id else {}
                 if store.errors:
                     st.warning(f"השמירה למסד הנתונים נכשלה ב-{store.errors} עמודים (פרטים במסוף השרת). התוצאות מוצגות אך לא נשמרו במלואן.")
             except UploadRejected as e:                      # הודעה שכתבנו בעצמנו (למשל יותר מדי עמודים), בלי טקסט מהקובץ
@@ -601,6 +658,14 @@ st.markdown(kpi_cards([                                     # סדר מימין 
      "מול טבלת האמת" if orange_total else "אין טבלת אמת לקובץ",
      UI_DOT["orange"], "נמדד מול טבלת האמת, רק בדוגמה מחלק 1 ורק בתאים כתומים שיש בהם ערך" if orange_total else "אין טבלת אמת לקובץ שהועלה"),
 ]), unsafe_allow_html=True)
+if st.session_state.pop("db_error", False):
+    st.warning("שמירת השינוי האחרון למסד הנתונים נכשלה (פרטים במסוף השרת). השינוי מוצג כאן אך לא נשמר.")
+if st.session_state.get("upload_id") and not st.session_state.get("is_sample"):
+    try:
+        sc = service.status_counts(db(), st.session_state["upload_id"])
+        st.caption(f"שמור במסד הנתונים · ממתינות לבדיקה: {sc['pending']} · מוכנות לאישור: {sc['ready']} · אושרו: {sc['approved']}")
+    except Exception as e:
+        log_server_error("status_counts", e)
 issues = pass2_issues(pages)
 if issues["fallback"]:
     st.warning("מעבר 2 נקרא במודל הגיבוי החלש (המודל החזק לא זמין או נכשל) בעמודים: "
