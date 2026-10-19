@@ -60,8 +60,7 @@ def render_top(counts: dict) -> str:
                                             (COUNTER_STYLE["approved"], "approved", ["approved"], counts["approved"]),
                                             ("הכול", "all", list(STATUS_HE), total)):
                 st.button(f"{label}  {n}", key=f"rec_cnt_{key}", on_click=_set_statuses, args=(statuses,),
-                          type="primary" if sorted(current) == sorted(statuses) else "secondary",
-                          help=f"הצג רשומות: {label}")
+                          type="primary" if sorted(current) == sorted(statuses) else "secondary")
     return search
 
 
@@ -328,7 +327,46 @@ def render_export(conn, flt: service.RecordFilter, total: int) -> None:
                 st.caption(f"ייצוא {label} נכשל")
 
 
+WIPE_SESSION_KEYS = ("rec_open", "selected_cell", "upload_id", "pages", "images", "field_crops", "name_overrides", "_rec_flt", "_rec_sig",
+                     "rec_page", "_rec_goto_page")
+
+
+def _wipe_all() -> None:
+    """מוחק לצמיתות את כל הנתונים (מסד + תמונות) ומנקה גם את תוצאות הסשן הנוכחי שבזיכרון."""
+    try:
+        counts = service.delete_all_data(service.open_connection())
+    except Exception as e:
+        log_server_error("delete_all_data", e)
+        st.session_state["rec_wipe_msg"] = ("error", "המחיקה נכשלה (פרטים במסוף השרת). לא נמחק הכול, נסי שוב.")
+        return
+    for key in WIPE_SESSION_KEYS:
+        st.session_state.pop(key, None)
+    st.session_state["_rec_gen"] = st.session_state.get("_rec_gen", 0) + 1
+    st.session_state["rec_wipe_ok"] = False
+    st.session_state["rec_wipe_msg"] = ("success", f"הנתונים נמחקו לצמיתות: {counts['records']} רשומות, {counts['uploads']} העלאות, "
+                                                   f"{counts['audit_log']} רשומות ביומן ו-{counts['images']} תמונות עמוד.")
+
+
+def render_data_management() -> None:
+    """אזור קטן ומקופל בתחתית המסך, רחוק מכפתורי הפעולה הרגילים: מחיקת כל הנתונים. דורש תיבת סימון וכפתור."""
+    st.divider()
+    with st.expander("ניהול נתונים", expanded=False):
+        st.warning("המחיקה סופית ואינה ניתנת לשחזור. נמחקים כל הרשומות, יומן השינויים, ההעלאות וכל תמונות העמודים השמורות. "
+                   "קבצים שכבר הורדת (Excel / CSV / JSON) לא מושפעים.")
+        confirmed = st.checkbox("אני מבינה שהמחיקה סופית", key="rec_wipe_ok")
+        st.button("מחק את כל הנתונים", key="rec_wipe_all", on_click=_wipe_all, disabled=not confirmed)
+
+
 def render(db, he_flag) -> None:
+    """מסך הרשומות; ניהול הנתונים (מחיקה מלאה) תמיד בתחתית."""
+    msg = st.session_state.pop("rec_wipe_msg", None)
+    if msg:
+        getattr(st, msg[0])(msg[1])
+    _render_main(db, he_flag)
+    render_data_management()
+
+
+def _render_main(db, he_flag) -> None:
     """db = פונקציה שמחזירה חיבור; he_flag = שם דגל בעברית (מוגדר ב-app.py)."""
     conn = db()
     options = service.filter_options(conn)
