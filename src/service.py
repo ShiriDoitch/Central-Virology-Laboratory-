@@ -3,7 +3,7 @@
 import hashlib
 from dataclasses import dataclass, field
 
-from . import repo
+from . import db_export, repo
 from .confirm import normalize_override
 from .export import FIELD_KEYS, Cell, build_rows
 from .privacy import log_server_error
@@ -186,3 +186,16 @@ def revert_record_field(conn, record_id: int, key: str, expected_version: int | 
 
 def filter_options(conn) -> dict:
     return {"senders": repo.list_senders(conn), "uploads": repo.list_uploads(conn), "counts": repo.status_counts(conn)}
+
+
+# ---------- ייצוא מהמסד (שלב 5) ----------
+
+def export_records(conn, flt: RecordFilter, fmt: str) -> tuple[bytes, str, str]:
+    """כל הרשומות שמתאימות לסינון (לא רק העמוד המוצג) -> (תוכן, mime, שם קובץ). fmt = xlsx | csv | json."""
+    if fmt not in db_export.BUILDERS:
+        raise ValueError(f"unknown format {fmt!r}")
+    rows, _total = query(conn, flt, limit=None)
+    recs = [repo.get_record(conn, r["id"]) for r in rows]
+    names = {u["id"]: u["filename"] for u in repo.list_uploads(conn)}
+    mime, ext = db_export.FORMATS[fmt]
+    return db_export.BUILDERS[fmt](recs, names), mime, f"records.{ext}"

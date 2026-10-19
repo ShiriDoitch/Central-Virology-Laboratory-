@@ -173,6 +173,15 @@ def render(db, he_flag) -> None:
     msg = st.session_state.pop("rec_msg", None)
     if msg:
         getattr(st, msg[0])(msg[1])
+    with st.container(horizontal=True, gap="small", key="rec_export"):
+        st.caption(f"ייצוא של כל {total} הרשומות שמתאימות לסינון:")
+        for fmt, label in (("xlsx", "Excel"), ("csv", "CSV"), ("json", "JSON")):
+            try:
+                data, mime, name = service.export_records(conn, flt, fmt)
+                st.download_button(label, data, file_name=name, mime=mime, key=f"rec_dl_{fmt}", disabled=total == 0)
+            except Exception as e:
+                log_server_error("export_records", e)
+                st.caption(f"ייצוא {label} נכשל")
     if not rows:
         st.markdown("<div class='empty-filter'><b>אין רשומות להצגה</b>אין רשומות שמתאימות לחיפוש או לסינון.</div>", unsafe_allow_html=True)
         return

@@ -117,3 +117,11 @@ def test_invalid_edit_shows_error_and_writes_nothing(seeded):
     next(b for b in at.button if b.key == f"rec_save_{rid}").click().run()
     assert repo.get_record(conn, rid)["national_id"] == before
     assert any("לא תקין" in e.value for e in at.error)
+
+
+def test_screen_offers_three_downloads(seeded):
+    at = records_app()
+    at.run()
+    assert not at.exception
+    labels = [b.proto.label for b in at.get("download_button")]
+    assert labels == ["Excel", "CSV", "JSON"]
