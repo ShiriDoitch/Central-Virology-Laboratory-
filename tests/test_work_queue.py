@@ -151,6 +151,16 @@ def test_counters_show_totals_and_filter_on_click(db):
     assert len(table_rows(at)) == 1 and at.session_state["_rec_flt"].statuses == ["ready"]
 
 
+def test_table_columns_in_reading_order(db):
+    """עמודות הטבלה וסדרן. הרשת מצוירת LTR, ולכן סדר הקריאה (מימין לשמאל) הוא הרשימה ההפוכה."""
+    make_upload(db, "a.pdf", "a", utc_of(2026, 10, 1), n_pending=1)
+    at = screen()
+    at.run()
+    assert not at.exception
+    assert list(reversed(table_rows(at).columns)) == ["מס' התחייבות", "שם פרטי", "שם משפחה", 'ת"ז', "מרכזי", "גורם שולח",
+                                                      "תאריך קבלה", "עמוד", "סטטוס", "הועלה"]
+
+
 def test_upload_column_and_upload_date_filter_in_ui(db):
     make_upload(db, "a.pdf", "a", utc_of(2026, 10, 1, 9, 30), n_pending=1)
     make_upload(db, "b.pdf", "b", utc_of(2026, 10, 9, 14, 45), n_pending=2)

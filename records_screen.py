@@ -20,13 +20,15 @@ COLOR_HE = ui.STATE_LABEL
 SORT_HE = {"page": "סדר במסמך", "upload": "זמן העלאה", "updated": "עודכן לאחרונה", "last_name": "שם משפחה", "first_name": "שם פרטי", "national_id": 'ת"ז',
            "date": "תאריך קבלה", "sender": "גורם שולח", "commitment": "מס' התחייבות", "status": "סטטוס"}
 PAGE_SIZES = (25, 50, 100)
-UPLOAD_COL, STATUS_COL = "הועלה", "סטטוס"
+UPLOAD_COL, STATUS_COL, PAGE_COL = "הועלה", "סטטוס", "עמוד"
 COLUMN_OF = {"first_name": "first_name", "last_name": "last_name", "id": "national_id", "center": "center", "date": "receipt_date",
              "sender": "sender", "commitment": "commitment_no"}
-# עמודות הטבלה בסדר הקריאה (מימין לשמאל). הרשת מצוירת LTR, ולכן הרשימה נבנית הפוך (סוף הרשימה = העמודה הימנית).
-TABLE_FIELDS = ("commitment", "first_name", "last_name", "id", "center", "date")
+# שדות הטבלה בסדר הקריאה (מימין לשמאל). הרשת מצוירת LTR, ולכן הרשימה נבנית הפוך (סוף הרשימה = העמודה הימנית).
+TABLE_FIELDS = ("commitment", "first_name", "last_name", "id", "center", "sender", "date")
 CODE_KEYS = ("id", "center", "commitment")           # קודים: יישור וקריאה כמספר, לא כטקסט עברי
-WIDE_KEYS = {"center": 150, "commitment": 130, "id": 120, "date": 110}
+# רוחב מינימלי בפיקסלים (הרשת מחלקת את הרוחב הפנוי באופן יחסי). עמודות המידע הצדדי (עמוד, הועלה) צרות, כדי שעשר עמודות ייכנסו.
+WIDE_KEYS = {"center": 150, "commitment": 130, "id": 118, "sender": 148, "date": 104, "last_name": 100, "first_name": 92}
+META_WIDTH = {PAGE_COL: 54, STATUS_COL: 88, UPLOAD_COL: 116}
 
 
 def _fmt(d: date | None) -> str | None:
@@ -103,11 +105,11 @@ def read_filter(options: dict, search: str) -> service.RecordFilter:
 
 
 def _table(rows: list[dict]) -> pd.DataFrame:
-    """עמודות ברירת המחדל: מס' התחייבות, שם פרטי, שם משפחה, ת"ז, מרכזי, תאריך קבלה, סטטוס, הועלה.
-    (גורם שולח ועמוד המקור מוצגים בכרטיס הרשומה.) הרשת מצוירת LTR, ולכן סדר הרשימה הפוך לסדר הקריאה."""
-    cols = [UPLOAD_COL, STATUS_COL] + [TITLES[k] for k in reversed(TABLE_FIELDS)]
+    """עמודות הטבלה בסדר הקריאה: מס' התחייבות, שם פרטי, שם משפחה, ת"ז, מרכזי, גורם שולח, תאריך קבלה, עמוד, סטטוס, הועלה.
+    הרשת מצוירת LTR, ולכן סדר הרשימה הפוך לסדר הקריאה (סוף הרשימה = העמודה הימנית)."""
+    cols = [UPLOAD_COL, STATUS_COL, PAGE_COL] + [TITLES[k] for k in reversed(TABLE_FIELDS)]
     data = [{**{TITLES[k]: r[COLUMN_OF[k]] or "" for k in TABLE_FIELDS}, UPLOAD_COL: service.upload_time_label(r.get("upload_at")),
-             STATUS_COL: STATUS_HE[r["status"]]} for r in rows]
+             STATUS_COL: STATUS_HE[r["status"]], PAGE_COL: r["page_no"]} for r in rows]
     return pd.DataFrame(data, columns=cols)
 
 
@@ -118,10 +120,11 @@ def _styled(df: pd.DataFrame, rows: list[dict]):
 
 
 def _table_config(df: pd.DataFrame) -> dict:
-    """יישור ורוחב: הכול לימין (עברית), הסטטוס ממורכז, קודים ברוחב קבוע."""
+    """יישור ורוחב: הכול לימין (עברית), הסטטוס ועמוד המקור ממורכזים וצרים, קודים ברוחב קבוע."""
     width_of = {TITLES[k]: w for k, w in WIDE_KEYS.items()}
-    cfg = {STATUS_COL: st.column_config.TextColumn(STATUS_COL, width=96, alignment="center"),
-           UPLOAD_COL: st.column_config.TextColumn(UPLOAD_COL, width=130, alignment="right")}
+    cfg = {STATUS_COL: st.column_config.TextColumn(STATUS_COL, width=META_WIDTH[STATUS_COL], alignment="center"),
+           UPLOAD_COL: st.column_config.TextColumn(UPLOAD_COL, width=META_WIDTH[UPLOAD_COL], alignment="right"),
+           PAGE_COL: st.column_config.NumberColumn(PAGE_COL, width=META_WIDTH[PAGE_COL], format="%d", help="עמוד המקור במסמך")}
     for col in df.columns:
         cfg.setdefault(col, st.column_config.TextColumn(col, width=width_of.get(col), alignment="right"))
     return cfg
