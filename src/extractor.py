@@ -1,6 +1,8 @@
 """חילוץ במודל. הממשק החיצוני: extract(images) -> dict (כדי שאפשר להחליף מודל).
 מעבר ראשון: extract (עמוד שלם). מעבר שני: extract_regions (חיתוכים מוגדלים, בקשה אחת לשני האזורים)."""
 import base64
+import contextlib
+import contextvars
 import io
 import json
 import os
@@ -204,6 +206,73 @@ def _jitter(base: float) -> float:
     return base * (1 + random.uniform(-JITTER, JITTER))
 
 
+# ---------------------------------------------------------------------------------------------------------------
+# תקציב זמן לעמוד: מכסה כוללת לכל העבודה על עמוד אחד (כל המעברים, הניסיונות החוזרים, המודלים והמפתחות). נבדק בין ניסיונות,
+# מודלים ומפתחות; כל ניסיון מוגבל לזמן שנשאר (לא יותר מ-TIMEOUT_MS). חריגה = PageTimeout, ובתוצאה error_code="page_timeout".
+# ---------------------------------------------------------------------------------------------------------------
+DEFAULT_PAGE_BUDGET_S = 180.0
+MIN_ATTEMPT_S = 5.0          # פחות מזה בתקציב: לא מתחילים ניסיון חדש (וגם לא ממתינים לניסיון חוזר)
+_clock = time.monotonic      # נקודת חיבור לשעון מדומה בבדיקות
+
+
+class PageTimeout(Exception):
+    """תקציב הזמן לעמוד נגמר."""
+
+
+class BudgetState:
+    def __init__(self, seconds: float):
+        self.deadline = _clock() + seconds
+        self.exceeded = False
+
+
+_budget: contextvars.ContextVar["BudgetState | None"] = contextvars.ContextVar("page_budget", default=None)
+
+
+def page_budget_s() -> float:
+    """תקציב הזמן לעמוד בשניות: משתנה הסביבה PAGE_BUDGET_S (ברירת מחדל 180). ערך לא תקין או לא חיובי: ברירת המחדל."""
+    try:
+        value = float(os.getenv("PAGE_BUDGET_S") or DEFAULT_PAGE_BUDGET_S)
+    except ValueError:
+        return DEFAULT_PAGE_BUDGET_S
+    return value if value > 0 else DEFAULT_PAGE_BUDGET_S
+
+
+@contextlib.contextmanager
+def page_budget(seconds: float | None = None):
+    """כל קריאה לחילוץ בתוך הבלוק חלה עליה מכסת זמן אחת משותפת. מחזיר BudgetState (exceeded=True אם התקציב נגמר בדרך)."""
+    state = BudgetState(page_budget_s() if seconds is None else seconds)
+    token = _budget.set(state)
+    try:
+        yield state
+    finally:
+        _budget.reset(token)
+
+
+def remaining_budget() -> float | None:
+    state = _budget.get()
+    return None if state is None else state.deadline - _clock()
+
+
+def check_budget(min_needed: float = 0.0) -> None:
+    state = _budget.get()
+    if state is not None and state.deadline - _clock() <= min_needed:
+        state.exceeded = True
+        raise PageTimeout("page time budget exhausted")
+
+
+def budget_sleep(seconds: float) -> None:
+    """המתנה שמכבדת את התקציב: אם אחריה לא יישאר זמן לניסיון, לא ממתינים אלא נכשלים מיד."""
+    rem = remaining_budget()
+    if rem is not None and seconds + MIN_ATTEMPT_S > rem:
+        check_budget(rem)                      # רושם חריגה וזורק
+    time.sleep(seconds)
+
+
+def _timeout_failure(models_tried: list[str] | None = None, stats: Counter | None = None) -> dict:
+    return {"ok": False, "error": "page time budget exhausted", "error_code": "page_timeout", "recoverable": False,
+            "models_tried": models_tried or [], "model_errors": {}, "stats": dict(stats or {})}
+
+
 TRACKER = QuotaTracker(strong_models=strong_model_list)   # מכסות ומרווחים; בבדיקות מוחלף ב-conftest
 DAILY_QUOTA_MSG = "מכסה יומית נגמרה"
 REGION_ATTEMPTS = 2          # מעבר שני: ניסיון + ניסיון חוזר אחד (אחרי ~3 שניות) על 503/504/timeout, לפני מפתח/מודל הבא
@@ -271,11 +340,15 @@ def _call_model(client, model: str, contents: list, schema: type[BaseModel], sta
     attempts = ATTEMPTS_PER_MODEL if max_attempts is None else max(1, min(ATTEMPTS_PER_MODEL, max_attempts))
     minute_429_waited = False
     for attempt in range(attempts):
+        check_budget(MIN_ATTEMPT_S)
         trk.before_call(model)          # יכול לזרוק DailyQuotaExhausted / ModelNotFound (לפני שנשלחה בקשה)
         stats["api_calls"] += 1
         stats[f"calls:{model}"] += 1
+        rem = remaining_budget()
+        call_config = config if rem is None else config.model_copy(
+            update={"http_options": types.HttpOptions(timeout=max(1000, int(min(TIMEOUT_MS, rem * 1000))))})   # ניסיון לא חורג מהתקציב
         try:
-            resp = client.models.generate_content(model=model, contents=contents, config=config)
+            resp = client.models.generate_content(model=model, contents=contents, config=call_config)
             stats[f"ok:{model}"] += 1
             return resp.text or ""
         except Exception as e:
@@ -294,9 +367,9 @@ def _call_model(client, model: str, contents: list, schema: type[BaseModel], sta
                 if minute_429_waited or no_wait_429:
                     raise
                 minute_429_waited = True
-                time.sleep(QUOTA_WAIT_S)
+                budget_sleep(QUOTA_WAIT_S)
             else:
-                time.sleep(_jitter(RETRY_WAITS_S[min(attempt, len(RETRY_WAITS_S) - 1)]))
+                budget_sleep(_jitter(RETRY_WAITS_S[min(attempt, len(RETRY_WAITS_S) - 1)]))
     return ""
 
 
@@ -318,8 +391,9 @@ def _call_with_fallback(client, contents: list, schema: type[BaseModel],
             break
         if called >= MAX_MODELS_PER_PAGE:
             break
+        check_budget(MIN_ATTEMPT_S)
         if pending_sleep and fallback_sleep_s:
-            time.sleep(fallback_sleep_s)
+            budget_sleep(fallback_sleep_s)
         pending_sleep = False
         tried.append(model)
         calls_before = stats["api_calls"]
@@ -387,6 +461,8 @@ def _run_gemini_key(contents: list, schema: type[BaseModel], api_key: str, index
             last_error = "model returned invalid JSON"
             error_code = "invalid_json"
             recoverable = True
+        except PageTimeout:
+            return _timeout_failure(tried, stats)
         except Exception as e:  # לא להכשיל את כל הריצה בגלל עמוד אחד
             last_error = f"{type(e).__name__}: {_redact(str(e)[:200], all_keys)}"
             error_code = _error_code(e)
@@ -458,6 +534,10 @@ def _run(contents: list, schema: type[BaseModel], models: list[str] | None = Non
     key_errors: dict[int, str] = {}
     last: dict = {}
     for index, api_key in enumerate(keys):
+        try:
+            check_budget(MIN_ATTEMPT_S)
+        except PageTimeout:
+            return {**_timeout_failure(stats=total), "provider": "gemini", "key_errors": dict(key_errors)}
         res = _run_gemini_key(contents, schema, api_key, index, keys, models, max_calls, attempts_per_model,
                               fallback_sleep_s, no_wait_429)
         total.update(res.get("stats") or {})
@@ -468,6 +548,8 @@ def _run(contents: list, schema: type[BaseModel], models: list[str] | None = Non
             return {**res, "stats": dict(total), "provider": "gemini", "api_key_index": index, **extra}
         last = res
         key_errors[index] = (res.get("model_errors") and next(iter(res["model_errors"].values()))) or res.get("error", "unknown")
+        if res.get("error_code") == "page_timeout":
+            return {**res, "stats": dict(total), "provider": "gemini", "key_errors": dict(key_errors)}      # נגמר הזמן: בלי מפתח נוסף ובלי Claude
         if not res.get("recoverable"):
             break                                   # בקשה פגומה: מפתח אחר או Claude לא יעזרו
     last = {**last, "stats": dict(total), "provider": "gemini", "key_errors": dict(key_errors)}
@@ -560,7 +642,8 @@ def _run_anthropic(contents: list, schema: type[BaseModel], models: list[str] | 
     cfg = load_models_config()
     model = (models or [cfg.get("anthropic_model", "claude-sonnet-5-5")])[0]
     price = cfg.get("anthropic_price_per_mtok", DEFAULT_MODELS_CONFIG["anthropic_price_per_mtok"])
-    client = anthropic.Anthropic(max_retries=0, timeout=120.0)
+    rem0 = remaining_budget()
+    client = anthropic.Anthropic(max_retries=0, timeout=120.0 if rem0 is None else max(1.0, min(120.0, rem0)))
     content = [{"type": "text", "text": c} if isinstance(c, str) else c for c in contents]
     out_format = {"type": "json_schema", "schema": anthropic.transform_schema(schema)}
     stats: Counter = Counter()
@@ -569,6 +652,10 @@ def _run_anthropic(contents: list, schema: type[BaseModel], models: list[str] | 
     for _ in range(json_tries):
         text = None
         for attempt in range(1 + len(ANTHROPIC_RETRY_WAITS_S)):
+            try:
+                check_budget(MIN_ATTEMPT_S)
+            except PageTimeout:
+                return {**_timeout_failure([model]), "stats": dict(stats)}
             try:
                 SPEND.check()
             except BudgetExceeded as e:
@@ -587,7 +674,10 @@ def _run_anthropic(contents: list, schema: type[BaseModel], models: list[str] | 
                 last_error = f"{type(e).__name__}: {code or ''}"
                 if not transient or attempt == len(ANTHROPIC_RETRY_WAITS_S):
                     break
-                time.sleep(_jitter(ANTHROPIC_RETRY_WAITS_S[attempt]))
+                try:
+                    budget_sleep(_jitter(ANTHROPIC_RETRY_WAITS_S[attempt]))
+                except PageTimeout:
+                    return {**_timeout_failure([model]), "stats": dict(stats)}
                 continue
             stats[f"ok:{model}"] += 1
             stats["input_tokens"] += resp.usage.input_tokens
@@ -651,8 +741,12 @@ def _run_regions_with_fallback(contents: list, chain: list[str]) -> dict:
     error_code: str | None = None
     recoverable_all, key_errors = True, {}
     for i, model in enumerate(chain):
-        if i and not (set(model_errors.values()) <= {"daily_quota", "404"}):
-            time.sleep(SECOND_PASS_FALLBACK_SLEEP_S)         # אחרי עומס / timeout: מעט המתנה לפני המודל הבא
+        try:
+            check_budget(MIN_ATTEMPT_S)
+            if i and not (set(model_errors.values()) <= {"daily_quota", "404"}):
+                budget_sleep(SECOND_PASS_FALLBACK_SLEEP_S)         # אחרי עומס / timeout: מעט המתנה לפני המודל הבא
+        except PageTimeout:
+            return {**_timeout_failure(tried, stats), "model_errors": model_errors}
         res = _run(contents, RegionsExtraction, [model], max_calls=REGION_ATTEMPTS, attempts_per_model=REGION_ATTEMPTS,
                    claude_fallback=False, no_wait_429=True)         # Claude רק פעם אחת, אחרי כל השרשרת
         stats.update(res.get("stats") or {})
@@ -666,6 +760,8 @@ def _run_regions_with_fallback(contents: list, chain: list[str]) -> dict:
         model_errors[model] = ("daily_quota" if model in (res.get("daily_quota_exhausted") or [])
                                else (res.get("model_errors") or {}).get(model) or last_error)
         error_code = res.get("error_code") or error_code
+        if res.get("error_code") == "page_timeout":
+            return {**res, "stats": dict(stats), "model_errors": model_errors, "models_tried": tried}
         if res.get("error_code") in PAYLOAD_ERROR_CODES:
             break                                        # אותם חיתוכים ייכשלו גם במודל הבא
     if recoverable_all and claude_fallback_available() and provider() != "anthropic" and error_code not in PAYLOAD_ERROR_CODES:

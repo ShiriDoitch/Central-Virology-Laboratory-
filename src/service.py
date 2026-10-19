@@ -43,6 +43,7 @@ class Persister:
         self.conn, self.filename, self.sha = conn, filename, sha256_of(data)
         self.upload_id: int | None = None
         self.errors = 0
+        self.incomplete_pages: list[int] = []        # עמודים שחרגו מתקציב הזמן: ההעלאה נשארת לא שלמה וניתן להמשיך בהעלאה חוזרת
         self.counts = {"created": 0, "updated": 0, "skipped_approved": 0}
 
     def start(self, page_count: int) -> int:
@@ -51,6 +52,8 @@ class Persister:
         return self.upload_id
 
     def page(self, page_result: dict) -> None:
+        if page_result.get("error_code") == "page_timeout":
+            self.incomplete_pages.append(page_result.get("page"))
         try:
             rows = machine_rows(page_result) if (page_result.get("pass1") or {}).get("ok") else []
             for er in rows:
@@ -63,7 +66,7 @@ class Persister:
             log_server_error(f"persist page {page_result.get('page')}", e)
 
     def finish(self) -> None:
-        if self.upload_id is not None and not self.errors:
+        if self.upload_id is not None and not self.errors and not self.incomplete_pages:
             repo.complete_upload(self.conn, self.upload_id)
 
 

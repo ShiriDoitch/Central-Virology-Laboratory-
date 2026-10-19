@@ -126,6 +126,17 @@ def save_debug_images(out_dir: Path, page: int, page_jpeg: bytes, crops: dict[st
 
 def process_page(pdf_path: str, page: int, force_second_pass: bool = False,
                  debug_dir: Path | None = None, retry_patient_labels: bool = True) -> dict:
+    """עמוד אחד תחת תקציב זמן כולל (extractor.page_budget, ברירת מחדל 180 שניות, PAGE_BUDGET_S). חריגה: error_code="page_timeout" בתוצאת
+    העמוד (ובכשל המעבר הראשון גם ב-pass1), והעיבוד של שאר העמודים ממשיך. פרטים על שאר התוצאה: _process_page."""
+    with extractor.page_budget() as budget:
+        out = _process_page(pdf_path, page, force_second_pass, debug_dir, retry_patient_labels)
+    if budget.exceeded or (out.get("pass2") or {}).get("error_code") == "page_timeout":
+        out["error_code"] = "page_timeout"
+    return out
+
+
+def _process_page(pdf_path: str, page: int, force_second_pass: bool = False,
+                  debug_dir: Path | None = None, retry_patient_labels: bool = True) -> dict:
     """מחזיר {page, pass1, pass2, boxes, second_pass, reasons, stats}.
     second_pass = run | skipped | failed | daily_quota_exhausted | not_possible (המעבר הראשון נכשל).
     המעבר השני עולה לכל היותר קריאה חזקה אחת לעמוד (ראו extract_regions).

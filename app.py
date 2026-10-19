@@ -669,6 +669,9 @@ if run_clicked and upload is not None:
                 st.session_state["is_sample"] = False
                 st.session_state["upload_id"] = store.upload_id
                 st.session_state["name_overrides"] = service.load_overrides(db(), store.upload_id) if store.upload_id else {}
+                if store.incomplete_pages:
+                    st.warning("העיבוד של עמודים " + ", ".join(map(str, store.incomplete_pages)) + " חרג מהזמן המוקצב לעמוד ולא הושלם. "
+                               "שאר העמודים עובדו. כדי להמשיך, העלי שוב את אותו קובץ.")
                 if store.errors:
                     st.warning(f"השמירה למסד הנתונים נכשלה ב-{store.errors} עמודים (פרטים במסוף השרת). התוצאות מוצגות אך לא נשמרו במלואן.")
             except UploadRejected as e:                      # הודעה שכתבנו בעצמנו (למשל יותר מדי עמודים), בלי טקסט מהקובץ
