@@ -39,7 +39,9 @@ GENERIC_TOKENS = frozenset({"מרכז", "רפואי", "בית", "חולים", "�
 # מילות מפתח של מוסד (בצורה מנורמלת): כינוי דו-משמעי (שם פרטי / משפחה / רחוב / מילה רגילה) מותר רק כשאחת מהן באותו טקסט, או כשהאזכור הוא
 # לוגו / כותרת / חותמת
 INSTITUTION_KEYWORDS = ("קופת חולים", "מרכז רפואי", "בית חולים", "קופח", "ה מ")
-TRUSTED_WHERE = ("logo", "header", "stamp")
+# patient_field נוסף לרשימה: זה שדה "קופה / משלם" בתיבת המטופל (המודל סימן אותו כך), שם צפוי שם קופה גם בלי מילת מפתח ("כללית" / "לאומית"),
+# ולא רופא או רחוב. בלי זה הכללים של patient_field (סעיף 17 ב-CLAUDE.md) היו נשברים לקופות ששמן גם מילה רגילה.
+TRUSTED_WHERE = ("logo", "header", "stamp", "patient_field")
 
 
 def _norm(text: str) -> str:
@@ -67,9 +69,11 @@ def _has_keyword(n: str) -> bool:
 class SenderMatcher:
     def __init__(self, canonical: dict[str, list[str]], branches: dict[str, str],
                  lab_names: list[str], learned: dict[str, str] | None = None, hmos: list[str] | None = None,
-                 ambiguous: list[str] | None = None):
+                 ambiguous: list[str] | None = None, keyword_required: list[str] | None = None):
         self.hmos = frozenset(hmos or [])
-        self._ambiguous = frozenset(a for a in (_norm(x) for x in (ambiguous or [])) if a)    # כינויים דו-משמעיים (config/senders.json: "ambiguous")      # קופות החולים (config/senders.json: "hmos"), לכלל R1
+        self._ambiguous = frozenset(a for a in (_norm(x) for x in (ambiguous or [])) if a)    # כינויים דו-משמעיים (config/senders.json: "ambiguous")
+        # שמות בודדים שהם גם שמות פרטיים / משפחה (אלישע, רפאל...): מותרים רק עם מילת מפתח של מוסד באותו טקסט, גם כשהאזכור לוגו / כותרת
+        self._keyword_required = frozenset(a for a in (_norm(x) for x in (keyword_required or [])) if a)      # קופות החולים (config/senders.json: "hmos"), לכלל R1
         pairs: set[tuple[str, str]] = set()
         for canon, aliases in canonical.items():
             for a in [canon, *aliases]:
@@ -84,6 +88,8 @@ class SenderMatcher:
 
     def _alias_allowed(self, alias: str, n: str, trusted: bool) -> bool:
         """כינוי רגיל: מופיע כתת-מחרוזת. כינוי דו-משמעי: מילה שלמה, ורק אם האזכור מהימן (לוגו / כותרת / חותמת) או שיש בטקסט מילת מפתח של מוסד."""
+        if alias in self._keyword_required:
+            return _whole_word(alias, n) and _has_keyword(n)
         if alias not in self._ambiguous:
             return alias in n
         return _whole_word(alias, n) and (trusted or _has_keyword(n))
@@ -128,6 +134,8 @@ class SenderMatcher:
             joined = " ".join(alias_words)
             if len(joined) < FUZZY_MIN_ALIAS_LEN:
                 continue
+            if (alias in self._keyword_required or joined in self._keyword_required) and not _has_keyword(n):
+                continue
             if (alias in self._ambiguous or joined in self._ambiguous) and not (trusted or _has_keyword(n)):
                 continue                       # גם שם קנוני שהחלק המבדיל שלו הוא מילה דו-משמעית (למשל "מרכז רפואי כרמל")
             k = len(alias_words)
@@ -148,7 +156,7 @@ def load_matcher(config_dir: Path = CONFIG_DIR) -> SenderMatcher:
     aliases_path = config_dir / "aliases.json"
     learned = json.loads(aliases_path.read_text(encoding="utf-8")) if aliases_path.exists() else {}
     return SenderMatcher(cfg["canonical"], cfg.get("branches", {}), cfg.get("lab_names", []), learned,
-                         cfg.get("hmos", []), cfg.get("ambiguous", []))
+                         cfg.get("hmos", []), cfg.get("ambiguous", []), cfg.get("keyword_required", []))
 
 
 def add_alias(alias: str, canonical: str, config_dir: Path = CONFIG_DIR) -> None:
