@@ -65,6 +65,12 @@ CREATE TABLE IF NOT EXISTS field_states (
     cell_confirmed INTEGER NOT NULL DEFAULT 0,
     PRIMARY KEY (record_id, field)
 );
+CREATE TABLE IF NOT EXISTS page_regions (
+    upload_id INTEGER NOT NULL REFERENCES uploads(id) ON DELETE CASCADE,
+    page_no INTEGER NOT NULL,
+    regions_json TEXT NOT NULL,
+    PRIMARY KEY (upload_id, page_no)
+);
 CREATE TABLE IF NOT EXISTS audit_log (
     id INTEGER PRIMARY KEY AUTOINCREMENT,
     record_id INTEGER,
@@ -134,6 +140,40 @@ def list_uploads(conn) -> list[dict]:
     return [dict(r) for r in conn.execute(
         "SELECT u.*, (SELECT COUNT(*) FROM records r WHERE r.upload_id = u.id) AS record_count "
         "FROM uploads u ORDER BY u.id DESC")]
+
+
+# ---------- אזורי השדות בתמונת העמוד השמורה ----------
+
+def save_page_regions(conn, upload_id: int, page_no: int, regions: dict) -> None:
+    """שברים (0..1) של אזור כל שדה בתמונת העמוד השמורה (אחרי הסיבוב). מספרים בלבד, בלי נתוני מטופל."""
+    with conn:
+        conn.execute("INSERT INTO page_regions (upload_id, page_no, regions_json) VALUES (?,?,?) "
+                     "ON CONFLICT(upload_id, page_no) DO UPDATE SET regions_json=excluded.regions_json",
+                     (upload_id, page_no, json.dumps(regions)))
+
+
+def get_page_regions(conn, upload_id: int, page_no: int) -> dict | None:
+    row = conn.execute("SELECT regions_json FROM page_regions WHERE upload_id=? AND page_no=?", (upload_id, page_no)).fetchone()
+    return json.loads(row[0]) if row else None
+
+
+def page_fully_approved(conn, upload_id: int, page_no: int) -> bool:
+    """האם יש לעמוד רשומה אחת לפחות וכולן מאושרות."""
+    row = conn.execute("SELECT COUNT(*), SUM(status = 'approved') FROM records WHERE upload_id=? AND page_no=?", (upload_id, page_no)).fetchone()
+    return bool(row[0]) and row[0] == (row[1] or 0)
+
+
+def delete_all_rows(conn) -> dict:
+    """מוחק את כל הנתונים: רשומות, מצבי שדות, מרכזיים, אזורים, יומן שינויים והעלאות. מחזיר ספירות לפני המחיקה. VACUUM אחריה
+    כדי שהקובץ לא ישמור שאריות של השורות שנמחקו."""
+    counts = {t: conn.execute(f"SELECT COUNT(*) FROM {t}").fetchone()[0]
+              for t in ("uploads", "records", "field_states", "record_centers", "page_regions", "audit_log")}
+    with conn:
+        for table in ("audit_log", "field_states", "record_centers", "page_regions", "records", "uploads"):
+            conn.execute(f"DELETE FROM {table}")
+        conn.execute("DELETE FROM sqlite_sequence")
+    conn.execute("VACUUM")
+    return counts
 
 
 # ---------- כתיבת תוצאות מכונה ----------

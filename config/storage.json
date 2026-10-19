@@ -1,0 +1,5 @@
+{
+  "_comment": "store_page_images: לשמור תמונת כל עמוד ב-data/pages/<מזהה העלאה>/p<עמוד>.jpg (מזהים מספריים בלבד, בלי שם קובץ או נתוני מטופל בנתיב). false = לא נכתב כלום. keep_images_after_approval: false = התמונה נמחקת אוטומטית כשכל הרשומות של העמוד אושרו; true = נשארת. אפשר לדרוס בסביבה: STORE_PAGE_IMAGES, KEEP_IMAGES_AFTER_APPROVAL (0/1).",
+  "store_page_images": true,
+  "keep_images_after_approval": false
+}

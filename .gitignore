@@ -17,3 +17,4 @@ tmp_uploads/
 # מסד הנתונים המקומי (נתוני מטופלים; לא ב-git)
 data/app.db
 data/app.db-*
+data/pages/

@@ -92,6 +92,8 @@ def process_upload(name: str, data: bytes, progress, store=None, on_status=None)
             pages.append(res)
             if store is not None:
                 store.page(res)
+                if hasattr(store, "save_image"):
+                    store.save_image(tmp, res)
             img = pdf_to_images(tmp, dpi=110, pages=[p])[0]
             applied = (res.get("rotation") or {}).get("applied")
             images[p] = rotate_jpeg(img, applied) if applied else img

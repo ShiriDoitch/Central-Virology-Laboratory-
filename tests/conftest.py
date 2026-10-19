@@ -26,6 +26,14 @@ def dev_privacy_mode(monkeypatch):
 
 
 @pytest.fixture(autouse=True)
+def isolated_page_images(monkeypatch, tmp_path_factory):
+    """תמונות העמודים השמורות נכתבות לתיקייה זמנית בכל בדיקה, לא ל-data/pages האמיתית. הגדרות האחסון חוזרות לברירות המחדל."""
+    monkeypatch.setenv("PAGES_DIR", str(tmp_path_factory.mktemp("pagesroot") / "pages"))   # התיקייה עצמה לא נוצרת מראש
+    monkeypatch.delenv("STORE_PAGE_IMAGES", raising=False)
+    monkeypatch.delenv("KEEP_IMAGES_AFTER_APPROVAL", raising=False)
+
+
+@pytest.fixture(autouse=True)
 def no_real_api_fallbacks(monkeypatch):
     """בבדיקות אסור שיישלחו בקשות אמיתיות: בלי גיבוי Claude (גם אם ANTHROPIC_API_KEY ב-.env של המפתחת) ובלי רשימת מפתחות Gemini
     מהסביבה. בדיקות של הגיבוי ושל סיבוב המפתחות מגדירות אותם בעצמן ומחליפות את הלקוחות בלקוחות מדומים."""

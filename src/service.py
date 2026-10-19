@@ -4,8 +4,8 @@ import hashlib
 from dataclasses import dataclass, field
 from datetime import datetime, timedelta, timezone
 
-from . import db_export, repo
-from .confirm import normalize_override
+from . import db_export, page_store, repo, storage_config
+from .confirm import field_crop_from_image, normalize_override, stored_field_fractions
 from .export import FIELD_KEYS, Cell, build_rows
 from .privacy import log_server_error
 
@@ -64,6 +64,27 @@ class Persister:
         except Exception as e:                      # כשל כתיבה לא מפיל את העיבוד; הפרטים רק במסוף
             self.errors += 1
             log_server_error(f"persist page {page_result.get('page')}", e)
+
+    def save_image(self, pdf_path: str, page_result: dict) -> bool:
+        """שומר את תמונת העמוד (ברזולוציית המודל, אחרי הסיבוב שהוחל) ואת אזורי השדות בה, לכרטיס הרשומה. רק עמוד שיש לו רשומות, ורק
+        כש-store_page_images פעיל (כבוי: לא נכתב כלום). כשל בשמירה נרשם בשרת ולא מפיל את העיבוד. מחזיר True אם נשמר."""
+        page = page_result.get("page")
+        try:
+            if not storage_config.setting("store_page_images") or self.upload_id is None:
+                return False
+            if not (page_result.get("pass1") or {}).get("ok") or not repo.page_records(self.conn, self.upload_id, page):
+                return False
+            from .intake import pdf_to_images, rotate_jpeg
+            image = pdf_to_images(pdf_path, pages=[page])[0]
+            applied = (page_result.get("rotation") or {}).get("applied")
+            if applied:
+                image = rotate_jpeg(image, applied)
+            page_store.write(self.upload_id, page, image)
+            repo.save_page_regions(self.conn, self.upload_id, page, stored_field_fractions(page_result))
+            return True
+        except Exception as e:                      # תמונה שלא נשמרה לא מונעת השלמת ההעלאה: הכרטיס יציג "אין תמונה שמורה"
+            log_server_error(f"save page image {page}", e)
+            return False
 
     def finish(self) -> None:
         if self.upload_id is not None and not self.errors and not self.incomplete_pages:
@@ -135,7 +156,11 @@ def row_info(conn, upload_id: int, page: int, ordinal: int) -> dict | None:
 
 
 def approve_row(conn, record_id: int) -> None:
+    """מאשר רשומה. אם כל הרשומות של העמוד מאושרות, תמונת העמוד נמחקת אוטומטית (אלא אם keep_images_after_approval)."""
     repo.approve_record(conn, record_id)
+    rec = repo.get_record(conn, record_id)
+    if rec and not storage_config.setting("keep_images_after_approval") and repo.page_fully_approved(conn, rec["upload_id"], rec["page_no"]):
+        page_store.delete(rec["upload_id"], rec["page_no"])
 
 
 def unapprove_row(conn, record_id: int) -> None:
@@ -268,3 +293,42 @@ def confirmed_value(conn, upload_id: int, page: int, okey: str) -> str | None:
             return None
         values.add(full["center"] if field == "center" else full[repo.FIELD_COLUMN[field]])
     return values.pop() if len(values) == 1 else None
+
+
+# ---------- תמונות העמודים השמורות ----------
+
+IMAGE_MISSING_TEXT = "אין תמונה שמורה לעמוד הזה"
+
+
+def delete_page_image(upload_id: int, page: int) -> bool:
+    return page_store.delete(upload_id, page)
+
+
+def delete_upload_images(upload_id: int) -> int:
+    return page_store.delete_upload(upload_id)
+
+
+def record_images(conn, record: dict) -> tuple[bytes | None, dict[str, bytes | None]]:
+    """(תמונת העמוד השמורה, חיתוך לכל שדה) לרשומה. אין תמונה: (None, {}) והכרטיס מציג הודעה ועריכה ממשיכה לעבוד.
+    חיתוך לפי אזור השדה שנשמר, באותה לוגיקה כמו במסך העיבוד (confirm.review_crop)."""
+    image = page_store.read(record["upload_id"], record["page_no"])
+    if image is None:
+        return None, {}
+    regions = repo.get_page_regions(conn, record["upload_id"], record["page_no"]) or {}
+    crops: dict[str, bytes | None] = {}
+    by_region: dict[tuple, bytes | None] = {}
+    for key in FIELD_KEYS:
+        fr = regions.get(key)
+        token = tuple(fr) if fr else None
+        if token not in by_region:
+            by_region[token] = field_crop_from_image(image, fr)
+        crops[key] = by_region[token]
+    return image, crops
+
+
+def delete_all_data(conn) -> dict:
+    """מוחק לצמיתות את כל הנתונים: שורות המסד (רשומות, מצבי שדות, יומן שינויים, העלאות) וכל תמונות העמודים השמורות.
+    לא נוגע בקבצים שכבר הורדו. מחזיר ספירות."""
+    counts = repo.delete_all_rows(conn)
+    counts["images"] = page_store.delete_all()
+    return counts

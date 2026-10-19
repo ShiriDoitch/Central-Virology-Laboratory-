@@ -4,7 +4,7 @@ import base64
 import html
 import re
 
-from .crop import REVIEW_MAX_GROW, choose_box, edges_touching_ink, expand_receipt_fractions, region_fractions, review_fractions
+from .crop import REVIEW_MAX_GROW, choose_box, crop_image, edges_touching_ink, expand_receipt_fractions, region_fractions, review_fractions
 from .export import COMMITMENT_ROW_KEY, FIELD_KEYS, NAME_KEYS, Cell
 from .intake import render_region
 from .rules import normalize_date
@@ -93,18 +93,48 @@ def field_crop(pdf_path: str, page_res: dict, key: str) -> bytes | None:
         if not fr:
             return None
         applied = (page_res.get("rotation") or {}).get("applied") or 0
-        fr = review_fractions(fr)                       # החיתוך שמוצג לאדם נדיב יותר מזה שהמודל קרא (הקריאה עצמה לא משתנה)
-        jpeg = render_region(pdf_path, page_res["page"], fr, scale=NAME_CROP_SCALE, rotation=applied)
-        for _ in range(REVIEW_MAX_GROW):                # דיו שעדיין נוגע בקצה = ספרות שנחתכו: מרחיבים את הצד הזה ומרנדרים שוב
-            sides = edges_touching_ink(jpeg)
-            if not sides:
-                break
-            wider = expand_receipt_fractions(fr, sides & {"left", "right", "top", "bottom"})
-            if wider == fr:
-                break
-            fr = wider
-            jpeg = render_region(pdf_path, page_res["page"], fr, scale=NAME_CROP_SCALE, rotation=applied)
-        return jpeg
+        return review_crop(lambda f: render_region(pdf_path, page_res["page"], f, scale=NAME_CROP_SCALE, rotation=applied), fr)
+    except Exception:
+        return None
+
+
+def review_crop(render, fr: tuple[float, float, float, float]) -> bytes:
+    """החיתוך שמוצג לאדם: חלון נדיב יותר מזה שהמודל קרא (review_fractions; הקריאה עצמה לא משתנה), ודיו שעדיין נוגע בקצה = ספרות
+    שנחתכו: מרחיבים את הצד הזה ומרנדרים שוב. render(fractions) -> JPEG. משותף למסך העיבוד (רינדור מה-PDF) ולכרטיס הרשומה (חיתוך
+    מתמונת העמוד השמורה), כך ששניהם מציגים אותו אזור באותה לוגיקה."""
+    fr = review_fractions(fr)
+    jpeg = render(fr)
+    for _ in range(REVIEW_MAX_GROW):
+        sides = edges_touching_ink(jpeg)
+        if not sides:
+            break
+        wider = expand_receipt_fractions(fr, sides & {"left", "right", "top", "bottom"})
+        if wider == fr:
+            break
+        fr = wider
+        jpeg = render(fr)
+    return jpeg
+
+
+def stored_field_fractions(page_res: dict) -> dict[str, list[float]]:
+    """אזור כל שדה (שברים 0..1 של העמוד אחרי הסיבוב) לשמירה לצד תמונת העמוד. שדה בלי אזור (שולח) לא נכלל."""
+    out = {}
+    for key in FIELD_REGION:
+        try:
+            fr = field_fractions(page_res, key)
+        except Exception:
+            fr = None
+        if fr:
+            out[key] = [round(float(x), 4) for x in fr]
+    return out
+
+
+def field_crop_from_image(image: bytes, fractions: list[float] | tuple | None) -> bytes | None:
+    """חיתוך השדה מתמונת העמוד השמורה (JPEG אחרי הסיבוב). None אם אין אזור או שהחיתוך נכשל."""
+    if not fractions:
+        return None
+    try:
+        return review_crop(lambda f: crop_image(image, f, scale=2.0), tuple(fractions))
     except Exception:
         return None
 
