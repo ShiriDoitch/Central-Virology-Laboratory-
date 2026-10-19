@@ -247,6 +247,9 @@ def edit_field(conn, record_id: int, field: str, value: str, *, expected_version
     if not value:
         raise ValueError("empty value; use revert_field")
     with conn:
+        st0 = conn.execute("SELECT cell_confirmed FROM field_states WHERE record_id=? AND field=?", (record_id, field)).fetchone()
+        if st0 and st0["cell_confirmed"] and _final_value(conn, record_id, field) == value:
+            return                      # אישור חוזר של אותו ערך (לחיצה כפולה): בלי גרסה חדשה, בלי audit, בלי שגיאה (גם אם הגרסה התיישנה)
         _load(conn, record_id, expected_version)
         st = conn.execute("SELECT machine_value FROM field_states WHERE record_id=? AND field=?", (record_id, field)).fetchone()
         old = _final_value(conn, record_id, field)
@@ -304,14 +307,22 @@ def unapprove_record(conn, record_id: int) -> None:
 
 # תאריך dd.mm.yyyy -> yyyymmdd להשוואה בטווח
 _DATE_KEY = "(substr(r.receipt_date,7,4) || substr(r.receipt_date,4,2) || substr(r.receipt_date,1,2))"
-SORT_COLUMNS = {"id": "r.id", "page": ("r.upload_id", "r.page_no", "r.ordinal"), "first_name": "r.first_name", "last_name": "r.last_name",
+SORT_COLUMNS = {"upload": "u.created_at", "id": "r.id", "page": ("r.upload_id", "r.page_no", "r.ordinal"), "first_name": "r.first_name", "last_name": "r.last_name",
                 "national_id": "r.national_id", "date": _DATE_KEY, "sender": "r.sender", "commitment": "r.commitment_no",
                 "status": "r.status", "updated": "r.updated_at"}
 
 
-def _where(search: str | None, statuses, senders, date_from: str | None, date_to: str | None, upload_id: int | None):
-    """date_from / date_to בפורמט dd.mm.yyyy (כולל)."""
+def _where(search: str | None, statuses, senders, date_from: str | None, date_to: str | None, upload_id: int | None,
+           uploaded_from: str | None = None, uploaded_before: str | None = None):
+    """date_from / date_to בפורמט dd.mm.yyyy (כולל). uploaded_from (כולל) / uploaded_before (לא כולל): חותמות זמן ISO ב-UTC
+    של שעת ההעלאה (uploads.created_at); ההמרה מתאריכים מקומיים נעשית בשכבת השירות."""
     where, args = [], []
+    if uploaded_from:
+        where.append("u.created_at >= ?")
+        args.append(uploaded_from)
+    if uploaded_before:
+        where.append("u.created_at < ?")
+        args.append(uploaded_before)
     if upload_id is not None:
         where.append("r.upload_id = ?")
         args.append(upload_id)
@@ -350,15 +361,17 @@ def _hydrate(conn, rows) -> list[dict]:
 
 def search_records(conn, *, search: str | None = None, statuses=None, senders=None, date_from: str | None = None,
                    date_to: str | None = None, upload_id: int | None = None, sort: str = "page", descending: bool = False,
-                   limit: int | None = 50, offset: int = 0) -> tuple[list[dict], int]:
+                   limit: int | None = 50, offset: int = 0, uploaded_from: str | None = None,
+                   uploaded_before: str | None = None) -> tuple[list[dict], int]:
     """מחזיר (שורות העמוד, סך כל ההתאמות). limit=None = הכול (לייצוא)."""
-    where, args = _where(search, statuses, senders, date_from, date_to, upload_id)
-    total = conn.execute(f"SELECT COUNT(*) FROM records r{where}", args).fetchone()[0]
+    where, args = _where(search, statuses, senders, date_from, date_to, upload_id, uploaded_from, uploaded_before)
+    total = conn.execute(f"SELECT COUNT(*) FROM records r JOIN uploads u ON u.id = r.upload_id{where}", args).fetchone()[0]
     order = SORT_COLUMNS.get(sort, SORT_COLUMNS["page"])
     order = (order,) if isinstance(order, str) else order
     direction = "DESC" if descending else "ASC"
     order_sql = ", ".join(f"{c} {direction}" for c in order) + f", r.id {direction}"
-    sql = f"SELECT r.* FROM records r{where} ORDER BY {order_sql}"
+    sql = (f"SELECT r.*, u.created_at AS upload_at, u.filename AS upload_filename FROM records r "
+           f"JOIN uploads u ON u.id = r.upload_id{where} ORDER BY {order_sql}")
     if limit is not None:
         sql += " LIMIT ? OFFSET ?"
         args = [*args, int(limit), int(offset)]

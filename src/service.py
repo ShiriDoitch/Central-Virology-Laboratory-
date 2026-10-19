@@ -199,3 +199,16 @@ def export_records(conn, flt: RecordFilter, fmt: str) -> tuple[bytes, str, str]:
     names = {u["id"]: u["filename"] for u in repo.list_uploads(conn)}
     mime, ext = db_export.FORMATS[fmt]
     return db_export.BUILDERS[fmt](recs, names), mime, f"records.{ext}"
+
+
+def confirmed_value(conn, upload_id: int, page: int, okey: str) -> str | None:
+    """הערך שכבר אושר ושמור במסד לתא של הממשק (לפי עמוד / שורת התחייבות), או None אם התא לא מאושר. שדה ברמת עמוד עם כמה שורות:
+    מאושר רק כשכל השורות אושרו לאותו ערך. משמש לנעילת כפתור האישור כשהטקסט שהוקלד זהה לערך השמור."""
+    field, recs = _targets(conn, upload_id, page, okey)
+    values = set()
+    for r in recs:
+        full = repo.get_record(conn, r["id"])
+        if not full["fields"][field]["cell_confirmed"]:
+            return None
+        values.add(full["center"] if field == "center" else full[repo.FIELD_COLUMN[field]])
+    return values.pop() if len(values) == 1 else None

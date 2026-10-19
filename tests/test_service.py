@@ -187,3 +187,18 @@ def test_unknown_field_rejected(conn):
     p, _ = first_rows(conn, pages, store)
     with pytest.raises(ValueError):
         service.save_override(conn, store.upload_id, p["page"], "bogus", "x", p)
+
+
+def test_confirmed_value_follows_saved_record(conn):
+    pages = saved_pages()
+    store = persist(conn, pages)
+    p, _ = first_rows(conn, pages, store)
+    assert service.confirmed_value(conn, store.upload_id, p["page"], "sender") is None
+    service.save_override(conn, store.upload_id, p["page"], "sender", "ידני", p)
+    assert service.confirmed_value(conn, store.upload_id, p["page"], "sender") == "ידני"
+    rid = repo.find_record(conn, store.upload_id, p["page"], 0)
+    n = len(repo.audit_entries(conn, rid))
+    service.save_override(conn, store.upload_id, p["page"], "sender", "ידני", p)       # שוב אותו ערך
+    assert len(repo.audit_entries(conn, rid)) == n
+    service.save_override(conn, store.upload_id, p["page"], "sender", None, p)
+    assert service.confirmed_value(conn, store.upload_id, p["page"], "sender") is None

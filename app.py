@@ -9,7 +9,7 @@ from pathlib import Path
 import pandas as pd
 import streamlit as st
 
-from src.confirm import FIELD_REGION, field_crop, flag_chips_html, md_code, md_text, name_suggestions, override_key, set_override, zoom_html
+from src.confirm import FIELD_REGION, field_crop, flag_chips_html, md_code, md_text, name_suggestions, normalize_override, override_key, set_override, zoom_html
 from src.export import COLUMNS, CONFIRMED, FIELD_KEYS, GREEN, ORANGE, YELLOW, _readings, build_rows, build_workbook, pass2_issues, skip_reason
 import records_screen
 from src import service
@@ -387,21 +387,53 @@ def _apply(page: int, okey: str, value: str | None) -> bool:
 
 def _choose(page: int, okey: str, value: str) -> None:
     """לחיצה על הצעה: הערך נשמר כערך הסופי (אישור משתמש) ומוצג גם בשדה ההקלדה."""
+    if value and value == saved_confirmed_value(page, okey):
+        return
     if _apply(page, okey, value):
         st.session_state[f"txt_{page}_{okey}"] = value
+        st.session_state[f"done_{page}_{okey}"] = st.session_state["name_overrides"].get((page, okey))
+
+
+def saved_confirmed_value(page: int, okey: str) -> str | None:
+    """הערך המאושר של התא לפי הרשומה השמורה במסד (לא רק לפי הסשן). בדוגמה או בלי מסד: לפי האישורים בסשן."""
+    upload_id = st.session_state.get("upload_id")
+    if upload_id and not st.session_state.get("is_sample"):
+        try:
+            return service.confirmed_value(db(), upload_id, page, okey)
+        except Exception as e:
+            log_server_error("confirmed_value", e)
+    return st.session_state.get("name_overrides", {}).get((page, okey))
+
+
+def _normalized(key: str, text: str | None) -> str | None:
+    return normalize_override(key, text)
+
+
+def already_confirmed(page: int, okey: str, text: str | None) -> bool:
+    """הטקסט שהוקלד (אחרי נרמול) זהה לערך המאושר השמור, או שזה עתה אושר בריצה הזו (דגל done: הכפתור ננעל מיד, גם אם הקריאה
+    מהמסד מתעכבת). דגל done נחשב רק כל עוד יש ערך מאושר שמור: אישור שבוטל (גם ממסך הרשומות) משחרר את הכפתור."""
+    typed = _normalized(okey.split("#")[0], text)
+    if not typed:
+        return False
+    saved = saved_confirmed_value(page, okey)
+    return typed == saved or (saved is not None and typed == st.session_state.get(f"done_{page}_{okey}"))
 
 
 def _confirm_typed(page: int, okey: str) -> None:
     text = st.session_state.get(f"txt_{page}_{okey}", "")
+    if already_confirmed(page, okey, text):
+        return                                        # לחיצה כפולה: הערך כבר אושר, לא עושים כלום (ובלי הודעת שגיאה)
     try:
         if _apply(page, okey, text):
             st.session_state[f"txt_{page}_{okey}"] = st.session_state["name_overrides"].get((page, okey), "")
+            st.session_state[f"done_{page}_{okey}"] = st.session_state["name_overrides"].get((page, okey))   # נעילה עד סוף הריצה
         st.session_state.pop(f"err_{page}_{okey}", None)
     except ValueError:
         st.session_state[f"err_{page}_{okey}"] = True      # ערך לא תקין לשדה: האישור הקודם לא משתנה
 
 
 def _clear(page: int, okey: str) -> None:
+    st.session_state.pop(f"done_{page}_{okey}", None)
     if _apply(page, okey, None):
         st.session_state[f"txt_{page}_{okey}"] = ""
     st.session_state.pop(f"err_{page}_{okey}", None)
@@ -503,7 +535,8 @@ def render_confirmation(page_res: dict, er, key: str, locked: bool = False) -> N
             st.caption("אחרי הערך שנקרא: החלפת ספרה אחת בזוגות מבולבלים שעוברת את ספרת הביקורת. אין תיקון אוטומטי.")
         with st.container(horizontal=True, gap="small", key="detail_suggest"):
             for i, sug in enumerate(suggestions):
-                st.button(md_text(sug), key=f"sg_{page}_{okey}_{i}", on_click=_choose, args=(page, okey, sug), disabled=locked)
+                st.button(md_text(sug), key=f"sg_{page}_{okey}_{i}", on_click=_choose, args=(page, okey, sug),
+                          disabled=locked or sug == saved_confirmed_value(page, okey))
     elif key in NAME_KEYS:
         st.warning(NOT_READ_TEXT)
     else:
@@ -514,7 +547,10 @@ def render_confirmation(page_res: dict, er, key: str, locked: bool = False) -> N
     if st.session_state.get(f"err_{page}_{okey}"):
         st.error("הערך לא תקין לשדה הזה, לא נשמר" + (f" ({INPUT_HINTS[key]})" if key in INPUT_HINTS else ""))
     ok_slot, clear_slot = st.columns([3, 2]) if cell.confirmed else (st.container(), None)
-    ok_slot.button("אשרי את הערך שהוקלד", key=f"ok_{page}_{okey}", on_click=_confirm_typed, args=(page, okey), type="primary", width="stretch", disabled=locked)
+    already = already_confirmed(page, okey, st.session_state.get(txt_key))
+    ok_slot.button("הערך אושר" if already else "אשרי את הערך שהוקלד", key=f"ok_{page}_{okey}", on_click=_confirm_typed, args=(page, okey),
+                   type="secondary" if already else "primary", width="stretch", disabled=locked or already,
+                   help="הערך שהוקלד זהה לערך השמור. שני את הטקסט כדי לאשר ערך אחר." if already else None)
     if clear_slot is not None:                           # פעולה משנית: כפתור שקט לצד הכפתור הראשי
         clear_slot.button("בטלי אישור", key=f"clr_{page}_{okey}", on_click=_clear, args=(page, okey), width="stretch", disabled=locked)
 

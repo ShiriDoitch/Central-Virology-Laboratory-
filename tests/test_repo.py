@@ -195,3 +195,48 @@ def test_connect_creates_file_under_env_path(tmp_path, monkeypatch):
     c = repo.connect()
     c.close()
     assert (tmp_path / "sub" / "x.db").exists()
+
+
+def test_repeated_identical_confirm_is_a_noop(conn):
+    uid = repo.create_upload(conn, "a.pdf", "s1", 1)
+    rid, _ = repo.save_machine_record(conn, uid, 1, 0, green_fields(id=("123", "orange", ["handwritten"])))
+    repo.edit_field(conn, rid, "id", "999")
+    before = repo.get_record(conn, rid)
+    n_audit = len(repo.audit_entries(conn, rid))
+    repo.edit_field(conn, rid, "id", "999")                                   # לחיצה כפולה
+    repo.edit_field(conn, rid, "id", "999", expected_version=before["version"] - 1)     # גם עם גרסה שהתיישנה: בלי שגיאה
+    after = repo.get_record(conn, rid)
+    assert after["version"] == before["version"] and after["updated_at"] == before["updated_at"]
+    assert len(repo.audit_entries(conn, rid)) == n_audit
+    repo.edit_field(conn, rid, "id", "1000")                                  # ערך אחר כן נרשם
+    assert len(repo.audit_entries(conn, rid)) == n_audit + 1
+
+
+def test_confirming_machine_value_twice_is_a_noop_but_first_confirm_counts(conn):
+    uid = repo.create_upload(conn, "a.pdf", "s1", 1)
+    rid, _ = repo.save_machine_record(conn, uid, 1, 0, green_fields(id=("123", "orange", ["handwritten"])))
+    repo.edit_field(conn, rid, "id", "123")
+    v = repo.get_record(conn, rid)["version"]
+    repo.edit_field(conn, rid, "id", "123")
+    assert repo.get_record(conn, rid)["version"] == v
+    assert [a["action"] for a in repo.audit_entries(conn, rid)].count("confirm") == 1
+
+
+def test_same_value_after_revert_is_a_real_confirm_again(conn):
+    uid = repo.create_upload(conn, "a.pdf", "s1", 1)
+    rid, _ = repo.save_machine_record(conn, uid, 1, 0, green_fields(id=("123", "orange", ["handwritten"])))
+    repo.edit_field(conn, rid, "id", "999")
+    repo.revert_field(conn, rid, "id")
+    v = repo.get_record(conn, rid)["version"]
+    repo.edit_field(conn, rid, "id", "999")
+    assert repo.get_record(conn, rid)["version"] == v + 1
+
+
+def test_approved_record_with_same_confirmed_value_is_silent_noop(conn):
+    uid = repo.create_upload(conn, "a.pdf", "s1", 1)
+    rid, _ = repo.save_machine_record(conn, uid, 1, 0, green_fields())
+    repo.edit_field(conn, rid, "sender", "מכבי")
+    repo.approve_record(conn, rid)
+    repo.edit_field(conn, rid, "sender", "מכבי")             # לחיצה כפולה שהגיעה אחרי האישור: לא שגיאת נעילה
+    with pytest.raises(repo.RecordLocked):
+        repo.edit_field(conn, rid, "sender", "אחר")
