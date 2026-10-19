@@ -11,6 +11,7 @@ import streamlit as st
 
 from src.confirm import FIELD_REGION, field_crop, flag_chips_html, md_code, md_text, name_suggestions, normalize_override, override_key, set_override, zoom_html
 from src.export import COLUMNS, CONFIRMED, FIELD_KEYS, GREEN, ORANGE, YELLOW, _readings, build_rows, build_workbook, pass2_issues, skip_reason
+import evidence_view
 import records_screen
 from src import service
 from src import ui_theme as ui
@@ -362,17 +363,7 @@ def render_evidence(page_res: dict, er, key: str, image: bytes | None) -> None:
         st.markdown(f"**{label}:** " + " | ".join(md_text(a) for a in cell.alternatives))
     if cell.hints:
         st.caption("רמזים: " + ", ".join(cell.hints))
-    if crop:
-        zoom = st.slider("הגדלה", 100, 600, 200, 50, key=f"zoom_{er.page}_{FIELD_REGION[key]}", format="%d%%")
-        st.markdown(zoom_html(crop, zoom), unsafe_allow_html=True)
-        st.caption("האזור שממנו נקרא השדה, מהעמוד הנקי. ההגדלה בסרגל משנה את גודל התמונה, וגוללים בתוך המסגרת.")
-    else:
-        st.caption("אין חיתוך זמין לשדה הזה; העמוד המלא מוצג.")
-        if image:
-            st.image(image, caption=f"עמוד {er.page}", width="stretch")
-    if crop and image:
-        with st.expander("העמוד המלא"):
-            st.image(image, caption=f"עמוד {er.page}", width="stretch")
+    evidence_view.render_crop_and_page(crop, image, er.page, zoom_key=f"zoom_{er.page}_{FIELD_REGION.get(key)}")      # רכיב משותף עם כרטיס הרשומה
     r1 = PageExtraction.model_validate(page_res["pass1"])
     p1, p2 = _readings(key, r1, page_res.get("pass2"))
     with st.expander("קריאות גולמיות של המודל"):

@@ -7,6 +7,7 @@ from datetime import date
 import pandas as pd
 import streamlit as st
 
+import evidence_view
 from src import service
 from src import ui_theme as ui
 from src.confirm import flag_chips_html, md_text
@@ -245,6 +246,15 @@ def render_field_notes(fs: dict, key: str, he_flag) -> None:
             st.markdown("**חלופות:** " + " | ".join(md_text(a) for a in alts))
 
 
+def _images(conn, rec: dict):
+    """תמונת העמוד השמורה וחיתוכי השדות; כשל בקריאה (קובץ פגום) נחשב כתמונה חסרה ולא מפיל את הכרטיס."""
+    try:
+        return service.record_images(conn, rec)
+    except Exception as e:
+        log_server_error("record_images", e)
+        return None, {}
+
+
 def render_detail(conn, rid: int, he_flag) -> None:
     rec = service.record_detail(conn, rid)
     if rec is None:
@@ -270,6 +280,12 @@ def render_detail(conn, rid: int, he_flag) -> None:
             f"<span class='rec-meta'>עמוד {int(rec['page_no'])} · שורה {int(rec['ordinal']) + 1}"
             + (" · נעולה לשינוי; עיבוד חוזר של הקובץ לא ידרוס אותה" if locked else "") + "</span></div>",
             unsafe_allow_html=True)
+        image, crops = _images(conn, rec)
+        if image is None:
+            st.info(service.IMAGE_MISSING_TEXT)                              # עריכה ואישור ממשיכים לעבוד גם בלי תמונה
+        else:
+            with st.expander("העמוד המקורי", expanded=True):
+                evidence_view.render_zoomable_page(image, zoom_key=f"rec_pagezoom_{rid}")
         with st.container(key="rec_fields"):
             cols = st.columns(2, gap="medium")
             for i, key in enumerate(FIELD_KEYS):
@@ -284,6 +300,9 @@ def render_detail(conn, rid: int, he_flag) -> None:
                         st.markdown(ui.field_head(TITLES[key], state), unsafe_allow_html=True)
                         st.text_input(TITLES[key], key=f"rec_in_{rid}_{key}", label_visibility="collapsed")
                     render_field_notes(fs, key, he_flag)
+                    if crops.get(key):
+                        with st.expander("האזור בטופס"):
+                            evidence_view.render_crop_and_page(crops[key], None, rec["page_no"], zoom_key=f"rec_zoom_{rid}_{key}")
                     if fs["cell_confirmed"] and not locked:
                         st.button("החזירי להצעת המערכת", key=f"rec_rv_{rid}_{key}", on_click=_revert, args=(rid, key))
         if not locked:
