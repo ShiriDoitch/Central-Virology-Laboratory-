@@ -9,7 +9,11 @@
     python scripts/eval_extra.py --truth=<path>  # קובץ אמת אחר
 מטמון: במצב dev (ברירת המחדל) תשובות המודל נשמרות ב-data/cache, ולכן הרצה חוזרת של --run לא עולה קריאות.
 
-פורמט טבלת האמת (CSV):
+טבלת האמת: xlsx או CSV, אותן עמודות. הסקריפט בוחר את הקובץ הראשון שקיים מתוך
+data/eval_extra/truth.xlsx, truth.csv, truth_template.csv (ומדפיס במה השתמש); `--truth=<path>` גובר.
+xlsx נוצר עם scripts/make_truth_xlsx.py ובו כל התאים בפורמט טקסט, כדי שאפסים מובילים בת"ז יישמרו.
+
+פורמט טבלת האמת:
     page,first_name,last_name,id,center,receipt_date,sender,commitment
 - **שורה לכל התחייבות.** עמוד עם שתי התחייבויות = שתי שורות עם אותו מספר עמוד; שם, ת"ז, מרכזי, תאריך וגורם שולח
   חוזרים בשתיהן, ורק ה-commitment שונה. השורות מקובצות לפי העמוד (TRUTH_ROW_FIELDS).
@@ -25,6 +29,7 @@
 import json
 import sys
 from collections import Counter
+from datetime import date, datetime
 from pathlib import Path
 
 ROOT = Path(__file__).resolve().parents[1]
@@ -40,8 +45,10 @@ from src.rules import F_NO_COMMITMENT, split_multi                             #
 from run_step2_dates import BudgetReached, BudgetTracker                       # noqa: E402
 
 PDF = ROOT / "data" / "eval_extra" / "forms.pdf"
-TRUTH = ROOT / "data" / "eval_extra" / "truth.csv"
+TRUTH_XLSX = ROOT / "data" / "eval_extra" / "truth.xlsx"
+TRUTH_CSV = ROOT / "data" / "eval_extra" / "truth.csv"
 TRUTH_TEMPLATE = ROOT / "data" / "eval_extra" / "truth_template.csv"
+TRUTH_CANDIDATES = [TRUTH_XLSX, TRUTH_CSV, TRUTH_TEMPLATE]      # הראשון שקיים הוא זה שנקרא
 OUT = ROOT / "outputs" / "eval_extra"
 PAGES = [1, 2, 3, 4, 5, 6]
 ROTATED_PAGES = [5, 6]            # לפי המפתחת: צילומי מסך מסובבים של מסך מערכת
@@ -65,27 +72,65 @@ BUCKETS = [("exact", ["confident_ok", "orange_ok"]), ("WRONG-GREEN", ["confident
 DETAIL = ["confident_ok", "confident_wrong", "orange_ok", "orange_wrong", "empty_ok", "empty_missed", "empty_flagged"]
 
 
-def load_truth_csv(path: Path) -> dict[int, list[dict]]:
-    """CSV ידני -> {עמוד: [שורות אמת]} בפורמט ש-compare_page מצפה לו.
+def cell_text(value) -> str | None:
+    """תא -> טקסט כפי שנכתב, או None אם ריק. אפסים מובילים נשמרים כשהתא הוא טקסט (פורמט "@").
+    תא ש**אקסל** שמר כמספר איבד את האפסים המובילים עוד לפני שהקוד רואה אותו, ולכן תבנית ה-xlsx היא טקסט.
+    מספר שלם: בלי ".0"; תאריך שאקסל המיר לתאריך אמיתי: dd.mm.yyyy (פורמט הפלט של המערכת)."""
+    if value is None:
+        return None
+    if isinstance(value, str):
+        return value.strip() or None
+    if isinstance(value, datetime):
+        return value.strftime("%d.%m.%Y")
+    if isinstance(value, date):
+        return value.strftime("%d.%m.%Y")
+    if isinstance(value, float) and value.is_integer():
+        return str(int(value))
+    return str(value).strip() or None
+
+
+def _rows_from_csv(path: Path) -> tuple[list[str], list[dict]]:
+    import csv
+    with path.open(encoding="utf-8-sig", newline="") as f:
+        reader = csv.DictReader(f)
+        return list(reader.fieldnames or []), [{k: cell_text(v) for k, v in raw.items()} for raw in reader]
+
+
+def _rows_from_xlsx(path: Path) -> tuple[list[str], list[dict]]:
+    """קורא את הגיליון הראשון. כל התאים נקראים כטקסט (cell_text), בלי המרה למספר או לתאריך."""
+    from openpyxl import load_workbook
+    wb = load_workbook(path, data_only=True, read_only=True)
+    try:
+        ws = wb.worksheets[0]
+        rows = ws.iter_rows(values_only=True)
+        header = [cell_text(v) or "" for v in next(rows, ())]
+        out = []
+        for raw in rows:
+            values = list(raw) + [None] * (len(header) - len(raw))
+            out.append({name: cell_text(v) for name, v in zip(header, values) if name})
+        return header, out
+    finally:
+        wb.close()
+
+
+def load_truth(path: Path) -> dict[int, list[dict]]:
+    """טבלת אמת (xlsx או CSV) -> {עמוד: [שורות אמת]} בפורמט ש-compare_page מצפה לו.
     שורה לכל התחייבות: **כמה שורות עם אותו מספר עמוד מקובצות יחד** (ולא דורסות זו את זו).
     מרכזי (וכל שדה רב-ערכי) נשאר כפי שנכתב, תא אחד מופרד ב-";", והפיצול נעשה בהשוואה (src.evaluate.compare_page).
     תא התחייבות עם כמה ערכים מופרדים ב-";" מתפצל גם הוא לשורה לכל התחייבות, כדי לסבול את שני הפורמטים."""
-    import csv
+    header, rows = _rows_from_xlsx(path) if path.suffix.lower() in (".xlsx", ".xlsm") else _rows_from_csv(path)
+    missing = [c for c in CSV_COLS if c not in header]
+    if missing:
+        raise ValueError(f"{path.name}: missing columns {missing}")
     out: dict[int, list[dict]] = {}
-    with path.open(encoding="utf-8-sig", newline="") as f:
-        reader = csv.DictReader(f)
-        missing = [c for c in CSV_COLS if c not in (reader.fieldnames or [])]
-        if missing:
-            raise ValueError(f"{path.name}: missing columns {missing}")
-        for raw in reader:
-            cells = {k: (v.strip() if isinstance(v, str) and v.strip() else None) for k, v in raw.items()}
-            if not cells.get("page"):
-                continue
-            page = int(cells["page"])
-            base = {field: cells.get(col) for col, field in CSV_TO_FIELD.items()}
-            base["check"] = None                   # אין שדות מוחרגים בסט הזה
-            commitments = split_multi(base["commitment"]) or [None]
-            out.setdefault(page, []).extend({**base, "commitment": c} for c in commitments)
+    for cells in rows:
+        if not cells.get("page"):
+            continue
+        page = int(cells["page"])
+        base = {field: cells.get(col) for col, field in CSV_TO_FIELD.items()}
+        base["check"] = None                   # אין שדות מוחרגים בסט הזה
+        commitments = split_multi(base["commitment"]) or [None]
+        out.setdefault(page, []).extend({**base, "commitment": c} for c in commitments)
     return out
 
 
@@ -100,11 +145,14 @@ def truth_filled(rows: list[dict]) -> bool:
     return any(r[f] for r in rows for f in ALL_FIELDS)
 
 
-def truth_path(argv: list[str]) -> Path:
+def truth_path(argv: list[str], candidates: list[Path] | None = None) -> Path:
+    """קובץ האמת: `--truth=<path>` גובר; אחרת הראשון שקיים מתוך truth.xlsx, truth.csv, truth_template.csv.
+    אם אף אחד לא קיים: הראשון ברשימה (ההודעה למשתמשת תאמר שהוא חסר)."""
     for a in argv:
         if a.startswith("--truth="):
             return Path(a.split("=", 1)[1])
-    return TRUTH if TRUTH.exists() else TRUTH_TEMPLATE
+    options = candidates or TRUTH_CANDIDATES
+    return next((p for p in options if p.exists()), options[0])
 
 
 def run_pages(tracker: BudgetTracker) -> tuple[str | None, list[dict]]:
@@ -323,9 +371,12 @@ def main(argv: list[str]) -> int:
         return 1
     source = truth_path(argv)
     if not source.exists():
-        print(f"missing truth file: {source}")
+        print(f"missing truth file: {source}\n"
+              f"אפשרויות שנבדקו: {', '.join(c.name for c in TRUTH_CANDIDATES)}. "
+              "ליצירת תבנית ריקה: python scripts/make_truth_xlsx.py")
         return 1
-    truth = load_truth_csv(source)
+    print(f"truth file: {source}")
+    truth = load_truth(source)
     missing_pages = [p for p in PAGES if p not in truth]
     if missing_pages:
         print(f"{source.name}: missing rows for pages {missing_pages}")
