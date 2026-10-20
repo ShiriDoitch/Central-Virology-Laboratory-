@@ -12,7 +12,7 @@ import pytest
 import records_screen
 from src.assemble import page_rows
 from src.export import FIELD_KEYS, build_rows, skip_reason
-from src.rules import F_MISSING_REQUIRED, F_NOT_RECOGNIZED_AS_FORM, has_form_signals
+from src.rules import F_MISSING_REQUIRED, F_MODEL_NOT_FORM, F_NOT_RECOGNIZED_AS_FORM, has_form_signals
 from src.schema import DateCandidate, Field_, NumberCandidate, PageExtraction
 
 EVAL_P2 = Path("outputs/eval_extra/p2.json")
@@ -102,13 +102,24 @@ def test_skipped_list_is_empty_for_a_normal_page():
 
 @pytest.mark.skipif(not EVAL_P2.exists(), reason="needs the saved eval_extra run")
 def test_cached_eval_extra_page2_is_no_longer_dropped():
-    """התשובה השמורה של עמוד 2: is_commitment_form=false, בלי מספר התחייבות, אבל עם חותמת "התקבל", ת"ז ושם."""
+    """התשובה השמורה של עמוד 2: is_commitment_form=false, אבל יש חותמת "התקבל", ת"ז ושם, והעמוד אינו נשמט.
+    מאז כלל "אות + 6 ספרות" נמצא בו גם מספר התחייבות (X132767), ולכן הוא נכנס במסלול הרגיל של עמוד שהמודל
+    סימן "לא טופס": השורה נשמרת ומספר ההתחייבות נושא את הדגל model_says_not_commitment_form."""
     result = json.loads(EVAL_P2.read_text(encoding="utf-8"))
     p1 = result["pass1"]
     assert p1["is_commitment_form"] is False and p1["retried"] is True
     assert has_form_signals(PageExtraction.model_validate(p1))
     rows = page_rows(p1, regions=result.get("pass2"), barcodes=result.get("barcodes"))
     assert len(rows) == 1
+    assert skip_reason({"page": 2, "pass1": p1}) is None          # העיקר: העמוד לא נשמט
+    assert F_MODEL_NOT_FORM in rows[0]["commitment_flags"]
+
+
+@pytest.mark.skipif(not EVAL_P2.exists(), reason="needs the saved eval_extra run")
+def test_cached_eval_extra_page2_without_any_commitment_is_an_orange_row():
+    """אותו עמוד בלי מספרים כלל: אין מועמד התחייבות, ולכן המסלול של סימני הטופס (שורה אחת, הכול כתום)."""
+    p1 = {**json.loads(EVAL_P2.read_text(encoding="utf-8"))["pass1"], "numbers": []}
+    rows = page_rows(p1)
+    assert len(rows) == 1
     assert F_NOT_RECOGNIZED_AS_FORM in rows[0]["id"].flags
     assert rows[0]["id"].uncertain and rows[0]["date"].uncertain
-    assert skip_reason({"page": 2, "pass1": p1}) is None

@@ -2,8 +2,8 @@
 from datetime import date
 
 from .rules import (
-    F_MISSING_REQUIRED, F_MODEL_NOT_FORM, F_NOT_RECOGNIZED_AS_FORM, H_FULL_NAME_SPLIT, commitment_numbers,
-    decide_center, decide_id, decide_name, decide_receipt_date, expand_rows, has_form_signals,
+    F_MISSING_REQUIRED, F_MODEL_NOT_FORM, F_NOT_RECOGNIZED_AS_FORM, H_FULL_NAME_SPLIT, commitment_from_region,
+    commitment_numbers, decide_center, decide_id, decide_name, decide_receipt_date, expand_rows, has_form_signals,
     split_full_name_fields, split_full_name_regions, verify_commitments,
 )
 from .schema import PageExtraction
@@ -24,6 +24,9 @@ def page_rows(result: dict, today: date | None = None, regions: dict | None = No
         return []
     page = PageExtraction.model_validate(result)
     commitments = commitment_numbers(page.numbers)
+    if not commitments:
+        # אין מועמד במעבר הראשון: מה שנקרא בחיתוך אזור ההתחייבות נכנס ככתום בלבד (לעולם לא ירוק)
+        commitments = commitment_from_region(regions)
     not_recognized = False
     if not page.is_commitment_form:
         if commitments:

@@ -43,6 +43,8 @@ F_COMMITMENT_MISMATCH = "commitment_mismatch"
 F_COMMITMENT_SINGLE_SOURCE = "commitment_single_source"
 F_MODEL_NOT_FORM ="model_says_not_commitment_form"
 F_NOT_RECOGNIZED_AS_FORM = "not_recognized_as_form"   # המודל סימן "לא טופס" אבל יש סימני טופס: שורה אחת, כל השדות כתומים
+F_COMMITMENT_FROM_REGION = "commitment_from_region"   # נקרא רק מחיתוך אזור ההתחייבות (מעבר 2), בלי מועמד מתויג במעבר 1: תמיד כתום
+F_COMMITMENT_LETTER_PREFIX = "commitment_letter_prefix"   # מספר בצורת אות + 6 ספרות בלי תווית: מועמד, תמיד כתום
 F_CENTER_FROM_BARCODE_ONLY = "center_from_barcode_only"
 F_CENTER_BARCODE_EXTRA = "center_barcode_extra"   # ערכי המודל הם תת-קבוצה אמיתית של ערכי הברקוד: יש ברקוד שהמודל לא קרא, כתום
 F_DATE_OUTSIDE_WINDOW = "date_outside_window"    # תאריך קבלה מחוץ לחלון [תאריך דגימה, שליחה/דגימה + 14 יום, לא בעתיד, לא אחרי תוקף]
@@ -62,6 +64,13 @@ H_TWO_READS = "two_readings_agree"       # מעבר ראשון + מעבר שני
 
 COMMITMENT_LABEL_WORDS = ("התחייבות", "דרישה", "דגימה", "אסמכתא")
 MIN_FALLBACK_DIGITS = 4  # בטבלת האמת מספר ההתחייבות הקצר ביותר הוא 4 ספרות
+# תוויות שמעידות שהמספר אינו מספר התחייבות (למשל "מקרה:" בעמוד 1 של eval_extra): קריאת אזור ההתחייבות
+# מהמעבר השני לא מתקבלת כשזו התווית שלה.
+NON_COMMITMENT_LABEL_WORDS = ("מקרה", "מבטח", "מבוטח", "ביטוח", "קופ", "ביקור", "מחלקה", "רופא", "טלפון", "נייד",
+                              "גיל", "מין", "זכר", "נקבה", "שעה", "זמן", "לידה", "מרכזי", "מרכז")
+# מספר התחייבות בצורת אות לטינית אחת ואחריה 6 ספרות (למשל X132767 בעמודים 2 ו-3 של eval_extra): מועמד כתום
+# בלבד, והספרות שלו לא נכנסות למאגר המרכזי.
+_LETTER_PREFIX_NUMBER = re.compile(r"^\s*[A-Za-z]\s*\d{6}\s*$")
 
 
 class Decision(BaseModel):
@@ -738,7 +747,7 @@ def commitment_numbers(numbers: list[NumberCandidate]) -> list[Decision]:
     fallback = [(n, _longest_digit_run(n.value)) for n in labeled]
     fallback = [(n, run) for n, run in fallback if run >= MIN_FALLBACK_DIGITS]
     if not fallback:
-        return _weak_commitment(numbers)
+        return _letter_prefix_commitment(numbers) or _weak_commitment(numbers)
     best, _ = max(fallback, key=lambda x: (x[1], x[0].confidence))
     value = best.value.strip()
     flags = [F_NON_DIGIT] + [f for f in _uncertainty_flags([(best.source, best.confidence)])]
@@ -773,6 +782,51 @@ def verify_commitments(commitments: list[Decision], regions: dict | None) -> lis
 
 
 _WEAK_LABEL = re.compile(r"^\s*מספר\s*[:：]?\s*$")
+
+
+def is_letter_prefix_number(raw: str | None) -> bool:
+    """מספר בצורת אות לטינית אחת ואחריה 6 ספרות (X132767). בטפסים בסט הנוסף זהו מספר ההתחייבות,
+    מודפס ליד ברקוד ובלי תווית בעברית."""
+    return bool(raw and _LETTER_PREFIX_NUMBER.match(raw))
+
+
+def _letter_prefix_commitment(numbers: list[NumberCandidate]) -> list[Decision]:
+    """מועמד בצורת אות + 6 ספרות, בלי תווית התחייבות (למשל X132767). **תמיד כתום** (אין תווית שתאשר אותו),
+    ורק כשיש ערך אחד כזה בעמוד: כמה ערכים שונים הם עמומים, ולא בוחרים ביניהם."""
+    groups: dict[str, list[NumberCandidate]] = {}
+    for n in numbers:
+        value = re.sub(r"\s+", "", n.value or "")
+        if is_letter_prefix_number(value) and not (n.label and _NON_CENTER_LABEL.search(n.label)):
+            groups.setdefault(value.upper(), []).append(n)
+    if len(groups) != 1:
+        return []
+    value, items = next(iter(groups.items()))
+    flags = [F_COMMITMENT_LETTER_PREFIX, *_uncertainty_flags([(c.source, c.confidence) for c in items])]
+    return [Decision(value=value, raw=value, flags=_dedupe(flags))]
+
+
+def commitment_from_region(regions: dict | None) -> list[Decision]:
+    """אין מועמד במעבר הראשון: קריאת אזור ההתחייבות מהמעבר השני (חיתוך מוגדל, region_ok=true) נכנסת
+    **ככתום בלבד** (F_COMMITMENT_FROM_REGION), לעולם לא ירוק: אין לה קריאה שנייה שתאשר אותה.
+    נדחית כשהתווית שנקראה ליד המספר היא תווית "לא התחייבות" מוכרת (NON_COMMITMENT_LABEL_WORDS; בעמוד 1 של
+    הסט הנוסף נקרא שם מספר "מקרה:"), או כשאין בערך רצף של MIN_FALLBACK_DIGITS ספרות."""
+    if not (regions and regions.get("ok")):
+        return []
+    c = regions.get("commitment") or {}
+    if not c.get("region_ok"):
+        return []
+    num = c.get("number") or {}
+    value = (num.get("value") or "").strip()
+    label = num.get("label") or ""
+    if not value or _longest_digit_run(value) < MIN_FALLBACK_DIGITS:
+        return []
+    if any(w in label for w in NON_COMMITMENT_LABEL_WORDS):
+        return []
+    flags = [F_COMMITMENT_FROM_REGION,
+             *_uncertainty_flags([(num.get("source", "unknown"), float(num.get("confidence") or 0.0))])]
+    if not re.sub(r"\s+", "", value).isdigit():
+        flags.append(F_NON_DIGIT)
+    return [Decision(value=value, raw=value, flags=_dedupe(flags))]
 
 
 def _weak_commitment(numbers: list[NumberCandidate]) -> list[Decision]:
@@ -916,6 +970,8 @@ def is_non_center_number(n: NumberCandidate) -> bool:
     בצורת שעה/תאריך (_TIME_OR_DATE_RAW). שני המסננים פועלים יחד: (ב) לבד משאיר מועמדים חלקיים וגורע (נבדק על חלק 1)."""
     if n.label and not is_center_label(n.label) and _NON_CENTER_LABEL.search(n.label):
         return True
+    if is_letter_prefix_number(n.value) and not (n.label and is_center_label(n.label)):
+        return True            # X132797 הוא מספר התחייבות: הספרות שלו לא ייכנסו כמרכזי (עמוד 3 בסט הנוסף)
     return bool(_TIME_OR_DATE_RAW.search(n.value or ""))
 
 
