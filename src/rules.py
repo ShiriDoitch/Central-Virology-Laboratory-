@@ -658,16 +658,22 @@ def full_name_label_seen(regions: dict | None) -> bool:
 def decide_name(f: Field_, regions: dict | None = None, which: str = "first_name") -> Decision:
     """שם פרטי/משפחה (which = first_name | last_name).
     - קריאה שהראיה שלה היא שם האב נדחית: דגל father_name, והקריאה ב-alternatives (לא נספרת כקריאה מסכימה).
-    - שם שכל קריאותיו בכתב יד ואין שתי קריאות מסכימות (מעבר ראשון + שני תקין): value ריק, דגל
-      handwritten_unconfirmed, והקריאה ב-alternatives בלבד (בלי raw: התא נשאר ריק וכתום).
-    - שתי קריאות מסכימות: ערך, כתום אם כולן בכתב יד. שמות שונים: סתירה.
+    - שתי קריאות מסכימות: ערך, כתום אם כולן בכתב יד (ובתצוגה: צהוב).
+    - **מעבר שני תקין (region_ok=true) בלי שתי קריאות מסכימות (20.10.2026): הקריאה מוצגת ככתום ולא כתא ריק.**
+      קריאות שונות: מוצגת קריאת המעבר השני (conflict + handwritten_unconfirmed), והקריאה האחרת ב-alternatives.
+      קריאה אחת בלבד: היא מוצגת (handwritten_unconfirmed). לעולם לא ירוק; אישור המשתמשת הוא מה שהופך אותה סופית.
+    - בלי מעבר שני תקין (לא רץ, נכשל, או region_ok=false): value ריק, דגל handwritten_unconfirmed,
+      והקריאה ב-alternatives בלבד (התא נשאר ריק וכתום).
     - קריאה שיש לה תווית שאינה תווית מטופל מוכרת: ריק, דגל name_label_unknown, והקריאה ב-alternatives.
     - שם מודפס חייב תווית מטופל מוכרת; בלי תווית (כותרת מודפסת שנקראה כשם) הוא עובר ל-alternatives בלבד, דגל
       name_label_missing. חיתוך שנפסל (region_ok=false): לא נכנס, והשדה כתום."""
     state = region_state(regions, "patient", which)
     fields = [f]
+    region_value = None
     if state == "ok":
-        fields.append(Field_.model_validate(regions["patient"][which]))
+        region_field = Field_.model_validate(regions["patient"][which])
+        fields.append(region_field)
+        region_value = (region_field.value or "").strip() or None
     groups: dict[str, list[Field_]] = {}
     rejected: list[str] = []                 # קריאות של שם האב
     unknown_label: list[str] = []            # קריאות שהתווית שלהן אינה תווית מטופל מוכרת
@@ -698,11 +704,19 @@ def decide_name(f: Field_, regions: dict | None = None, which: str = "first_name
         all_items = [x for items in groups.values() for x in items]
         if all(x.source == "handwritten" for x in all_items):
             flags.append(F_HANDWRITTEN_UNCONFIRMED)
-        d = Decision(flags=[F_CONFLICT, *flags], alternatives=_dedupe([*groups, *rejected]))
+        # קריאות שונות ויש מעבר שני תקין: מציגים את קריאת המעבר השני כהצעה כתומה (לעולם לא ירוקה),
+        # והקריאה האחרת נשארת ב-alternatives. בלי מעבר שני תקין: תא ריק וכתום, כמו קודם.
+        shown = region_value if (region_value in groups and region_value not in rejected) else None
+        d = Decision(value=shown, raw=shown, flags=[F_CONFLICT, *flags],
+                     alternatives=_dedupe([v for v in groups if v != shown] + rejected))
     else:
         value, items = next(iter(groups.items()))
         if all(x.source == "handwritten" for x in items) and len(items) < 2:
-            d = Decision(flags=[F_HANDWRITTEN_UNCONFIRMED, *flags], alternatives=_dedupe([value, *rejected]))
+            # קריאה אחת בלבד: מעבר שני תקין -> הערך מוצג ככתום עם handwritten_unconfirmed; אחרת ריק וכתום.
+            # ערך שנדחה בקריאה אחרת (שם האב, תווית לא מוכרת) לא מוצג גם כשקריאה אחרת החזירה אותו.
+            shown = value if (state == "ok" and value not in rejected) else None
+            d = Decision(value=shown, raw=shown, flags=[F_HANDWRITTEN_UNCONFIRMED, *flags],
+                         alternatives=_dedupe(rejected if shown else [value, *rejected]))
         else:
             d = Decision(value=value, raw=value, alternatives=_dedupe(rejected),
                          flags=[*_uncertainty_flags([(x.source, x.confidence) for x in items]), *flags],

@@ -72,12 +72,15 @@ def test_name_agreement_and_conflict():
     assert agree.value == "ישראל" and F_CONFLICT not in agree.flags
     assert agree.flags == [F_HANDWRITTEN]                 # שתי קריאות מסכימות: ערך, כתום (כתב יד)
     differ = decide_name(f, regions(first="רבקה"), "first_name")
-    assert differ.value is None and F_CONFLICT in differ.flags and differ.alternatives == ["ישראל", "רבקה"]
+    # שונה ב-20.10.2026: בסתירה מוצגת קריאת המעבר השני ככתום, והקריאה הראשונה נשארת כהצעה
+    assert differ.value == "רבקה" and F_CONFLICT in differ.flags and differ.alternatives == ["ישראל"]
+    assert differ.uncertain
 
 
 def test_name_from_second_pass_only_is_single_reading_so_unconfirmed():
+    """קריאה אחת בלבד עם חיתוך תקין: מוצגת ככתום (20.10.2026), עם handwritten_unconfirmed ובלי אישור."""
     d = decide_name(Field_(), regions(last="ישראלי"), "last_name")
-    assert d.value is None and d.flags == [rules.F_HANDWRITTEN_UNCONFIRMED] and d.alternatives == ["ישראלי"]
+    assert d.value == "ישראלי" and d.flags == [rules.F_HANDWRITTEN_UNCONFIRMED] and d.uncertain
 
 
 def test_name_region_not_ok_ignored_and_flagged():

@@ -41,13 +41,15 @@ def button(at, key):
 
 
 def test_typed_value_is_written_to_db_and_cleared(app):
+    """ערך שהוקלד ושונה מהצעת המכונה נרשם כעריכה. (ערך זהה להצעה נרשם כאישור; ראו repo.edit_field,
+    וזה המצב מאז שהקריאה בכתב יד מוצגת בתא ככתום.)"""
     at, conn, uid, pages = app
     select(at, pages, 1, "שם פרטי")
-    at.text_input(key="txt_1_first_name").set_value("ישראל").run()
+    at.text_input(key="txt_1_first_name").set_value("דנה").run()
     button(at, "ok_1_first_name").click().run()
     rid = repo.find_record(conn, uid, 1, 0)
     rec = repo.get_record(conn, rid)
-    assert rec["first_name"] == "ישראל" and rec["fields"]["first_name"]["human_edited"]
+    assert rec["first_name"] == "דנה" and rec["fields"]["first_name"]["human_edited"]
     assert repo.audit_entries(conn, rid)[-1]["action"] == "edit"
     button(at, "clr_1_first_name").click().run()
     assert repo.get_record(conn, rid)["fields"]["first_name"]["cell_confirmed"] is False

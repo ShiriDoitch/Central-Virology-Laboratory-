@@ -36,10 +36,12 @@ def test_two_agreeing_handwritten_readings_keep_value_in_orange():
 
 
 def test_two_different_handwritten_readings_conflict_and_unconfirmed():
+    """שונה ב-20.10.2026: קריאות שונות עם מעבר שני תקין -> מוצגת קריאת המעבר השני ככתום (לעולם לא ירוק),
+    והקריאה הראשונה נשארת כהצעה."""
     d = decide_name(fld("רחל"), regions(first="רבקה"), "first_name")
-    assert d.value is None
+    assert d.value == "רבקה" and d.uncertain
     assert d.flags == [F_CONFLICT, F_HANDWRITTEN_UNCONFIRMED]
-    assert d.alternatives == ["רחל", "רבקה"]
+    assert d.alternatives == ["רחל"]
 
 
 def test_printed_name_is_unchanged():
@@ -108,10 +110,17 @@ def test_father_reading_does_not_count_as_agreeing_reading():
 
 
 def test_non_father_second_reading_survives_when_first_is_father():
+    """הקריאה שאינה שם האב מוצגת ככתום (20.10.2026), ושם האב נשאר דחוי וב-alternatives בלבד."""
     d = decide_name(fld("אריה", evidence="שם האב:אריה צבי"), regions(first="רחל"), "first_name")
-    assert d.value is None                                  # קריאה אחת בכתב יד: לא מאושרת
+    assert d.value == "רחל" and d.uncertain
     assert d.flags == [F_HANDWRITTEN_UNCONFIRMED, F_FATHER_NAME]
-    assert d.alternatives == ["רחל", "אריה"]
+    assert d.alternatives == ["אריה"]
+
+
+def test_a_father_name_value_is_never_shown_even_if_another_reading_repeats_it():
+    """אותו טקסט שנקרא גם כשם האב: לא מוצג בתא בשום מקרה."""
+    d = decide_name(fld("אריה", evidence="שם האב: אריה"), regions(first="אריה"), "first_name")
+    assert d.value is None and F_FATHER_NAME in d.flags
 
 
 def test_father_rule_applies_to_last_name_too():

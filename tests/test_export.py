@@ -105,12 +105,20 @@ def test_colors_green_for_value_without_flag(tmp_path):
 
 def test_colors_orange_for_flag_and_white_for_empty_without_flag(tmp_path):
     page = good_page(id_numbers=[n("11223344", "ת.ז.", source="handwritten", conf=0.3)],   # כתב יד + ביטחון נמוך: כתום
-                     last_name=Field_())                                              # ריק בלי דגל: לבן
+                     sender_mentions=[])                                              # ריק בלי דגל: לבן
     wb, _ = save_and_load(tmp_path, [page])
     cells = dict(zip([k for k, _ in COLUMNS], main_cells(wb)))
     assert rgb(cells["id"]) == ORANGE_RGB
-    assert cells["last_name"].value is None and rgb(cells["last_name"]) is None   # בלי מילוי בכלל
+    assert cells["sender"].value is None and rgb(cells["sender"]) is None          # בלי מילוי בכלל
     assert rgb(cells["first_name"]) == GREEN_RGB
+
+
+def test_empty_name_is_always_flagged_for_review(tmp_path):
+    """שם ריק אינו ריק בשקט (20.10.2026): בלי דגל אחר שמסביר אותו הוא מקבל missing_required_field וכתום."""
+    wb, _ = save_and_load(tmp_path, [good_page(last_name=Field_())])
+    cells = dict(zip([k for k, _ in COLUMNS], main_cells(wb)))
+    assert cells["last_name"].value is None and rgb(cells["last_name"]) == ORANGE_RGB
+    assert "missing_required_field" in cells["last_name"].comment.text
 
 
 def test_empty_flagged_cell_is_orange_not_white_or_green(tmp_path):
@@ -158,16 +166,25 @@ def test_protect_unit():
 
 # ---------- תא כתום ----------
 
-def test_orange_cell_for_handwritten_name_is_empty_with_reading_in_comment(tmp_path):
-    """שם בכתב יד בקריאה אחת: התא ריק וכתום, בלי הצעה ובלי הקריאה (רעש): "לא נקרא, יש להקליד"."""
+def test_handwritten_name_read_once_is_shown_in_orange(tmp_path):
+    """שונה ב-20.10.2026: קריאה אחת בכתב יד עם מעבר שני תקין מוצגת בתא ככתום (הצעה לאישור), לא ריקה."""
     page = good_page(first_name=Field_(value="דנה", confidence=0.95, source="handwritten"))
     wb, _ = save_and_load(tmp_path, [page])
     first, last = main_cells(wb)[0], main_cells(wb)[1]
-    assert first.value is None and first.fill.fgColor.rgb[-6:] == ORANGE_RGB
+    assert first.value == "דנה" and first.fill.fgColor.rgb[-6:] == ORANGE_RGB
     assert "handwritten_unconfirmed" in first.comment.text
-    assert first.comment.text.startswith(export.NOT_READ_NOTE)           # "לא נקרא, יש להקליד"
-    assert "דנה" not in first.comment.text                                # קריאה בודדת היא רעש: לא מוצגת כהצעה
+    assert not first.comment.text.startswith(export.NOT_READ_NOTE)        # יש ערך בתא, אז אין "לא נקרא"
     assert last.fill.fgColor.rgb[-6:] != ORANGE_RGB
+
+
+def test_name_without_a_second_pass_stays_empty_with_the_type_it_note(tmp_path):
+    """בלי מעבר שני תקין הקריאה הבודדת נשארת רעש: תא ריק וכתום, "לא נקרא, יש להקליד"."""
+    page = good_page(first_name=Field_(value="דנה", confidence=0.95, source="handwritten"), confirmed=False)
+    wb, _ = save_and_load(tmp_path, [page])
+    first = main_cells(wb)[0]
+    assert first.value is None and first.fill.fgColor.rgb[-6:] == ORANGE_RGB
+    assert first.comment.text.startswith(export.NOT_READ_NOTE)
+    assert "דנה" not in first.comment.text
 
 
 def test_handwritten_name_with_two_agreeing_readings_is_yellow_with_a_glance_comment(tmp_path):
@@ -231,8 +248,8 @@ def test_empty_flagged_without_raw_is_blank_orange_with_alternatives(tmp_path):
 
 
 def test_empty_unflagged_is_blank_not_orange(tmp_path):
-    wb, _ = save_and_load(tmp_path, [good_page(first_name=Field_())])
-    cell = main_cells(wb)[0]
+    wb, _ = save_and_load(tmp_path, [good_page(sender_mentions=[])])
+    cell = dict(zip([k for k, _ in COLUMNS], main_cells(wb)))["sender"]
     assert cell.value is None and cell.fill.fgColor.rgb[-6:] != ORANGE_RGB
 
 
@@ -329,7 +346,7 @@ def test_summary_counts(tmp_path):
         good_page(1),                                                                   # הכול ירוק
         good_page(2, id_numbers=[n("11223344", "ת.ז.", source="handwritten")]),         # כתום אחד (ת"ז בכתב יד, קריאה אחת)
         good_page(3, id_numbers=[n("00112233", "ת.ז."), n("11223344", "ת.ז.")]),        # ריק מסומן אחד
-        good_page(4, last_name=Field_()),                                               # ריק אחד
+        good_page(4, sender_mentions=[]),                                               # ריק אחד
         make_page(5, is_form=False),
     ]
     pages[0]["stats"] = {"pass1": {"api_calls": 2, "quota_failures": 1}, "pass2": {}}
@@ -341,11 +358,18 @@ def test_summary_counts(tmp_path):
     assert s["api"]["api_calls"] == 2
 
 
-def test_summary_counts_unconfirmed_handwritten_names_as_empty_flagged(tmp_path):
+def test_summary_counts_unconfirmed_handwritten_names_as_orange(tmp_path):
+    """שונה ב-20.10.2026: ההצעה מוצגת בתא, ולכן היא נספרת ככתום ולא כ"ריק מסומן"."""
     page = good_page(1, first_name=Field_(value="דנה", confidence=0.9, source="handwritten"))
     _, s = save_and_load(tmp_path, [page])
-    assert s["by_field"]["first_name"] == {"empty_flagged": 1}
+    assert s["by_field"]["first_name"] == {"orange": 1}
     assert s["flags"] == {"handwritten_unconfirmed": 1}
+
+
+def test_summary_counts_a_name_without_a_second_pass_as_empty_flagged(tmp_path):
+    page = good_page(1, first_name=Field_(value="דנה", confidence=0.9, source="handwritten"), confirmed=False)
+    _, s = save_and_load(tmp_path, [page])
+    assert s["by_field"]["first_name"] == {"empty_flagged": 1}
 
 
 def test_summary_sheet_legend_and_counts_include_yellow(tmp_path):

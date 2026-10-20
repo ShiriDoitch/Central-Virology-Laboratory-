@@ -100,6 +100,9 @@ def test_both_names_empty_flagged_missing_required_in_both():
     assert row["first_name"].value is None and row["last_name"].value is None      # הערך לא מנוחש
 
 
-def test_one_name_present_no_missing_required_flag():
+def test_one_name_present_flags_only_the_missing_one():
+    """שונה ב-20.10.2026: שם ריק בלי דגל אחר מקבל missing_required_field, גם כשהשם השני נקרא.
+    קודם הוא נשאר ריק ובלי סימון, וכך שגיאה יכלה לעבור בשקט (עמוד 19 ב-v4b)."""
     row = page_rows(_page(first="דנה"))[0]
-    assert F_MISSING_REQUIRED not in row["first_name"].flags and F_MISSING_REQUIRED not in row["last_name"].flags
+    assert F_MISSING_REQUIRED not in row["first_name"].flags
+    assert F_MISSING_REQUIRED in row["last_name"].flags and row["last_name"].uncertain

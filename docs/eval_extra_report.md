@@ -10,10 +10,10 @@ Pages evaluated: 6 of 6
 
 | field | n | exact | WRONG-GREEN | wrong-orange | empty |
 |---|---|---|---|---|---|
-| date | 6 | 3 | 0 | 2 | 1 |
+| date | 6 | 4 | 0 | 1 | 1 |
 | center | 6 | 2 | 0 | 3 | 1 |
 | sender | 6 | 2 | 0 | 4 | 0 |
-| commitment (per commitment row) | 7 | 4 | 1 | 1 | 1 |
+| commitment (per commitment row) | 7 | 6 | 0 | 0 | 1 |
 
 ## ID (reported separately, CLAUDE.md section 16)
 
@@ -25,8 +25,8 @@ Pages evaluated: 6 of 6
 
 | field | n | exact | WRONG-GREEN | wrong-orange | empty |
 |---|---|---|---|---|---|
-| first_name | 6 | 1 | 0 | 0 | 5 |
-| last_name | 6 | 1 | 0 | 0 | 5 |
+| first_name | 6 | 3 | 0 | 1 | 2 |
+| last_name | 6 | 3 | 0 | 1 | 2 |
 
 exact = correct value (green or orange)  |  WRONG-GREEN = wrong and not flagged (the metric to minimize)  |  wrong-orange = wrong but flagged  |  empty = no value
 
@@ -34,13 +34,13 @@ exact = correct value (green or orange)  |  WRONG-GREEN = wrong and not flagged 
 
 | field | confident_ok | confident_wrong | orange_ok | orange_wrong | empty_ok | empty_missed | empty_flagged |
 |---|---|---|---|---|---|---|---|
-| date | 2 | 0 | 1 | 2 | 0 | 0 | 1 |
+| date | 2 | 0 | 2 | 1 | 0 | 0 | 1 |
 | center | 0 | 0 | 2 | 3 | 0 | 0 | 1 |
 | sender | 2 | 0 | 0 | 4 | 0 | 0 | 0 |
-| commitment | 1 | 1 | 3 | 1 | 0 | 0 | 1 |
+| commitment | 2 | 0 | 4 | 0 | 0 | 0 | 1 |
 | id | 2 | 0 | 2 | 1 | 0 | 0 | 1 |
-| first_name | 0 | 0 | 1 | 0 | 0 | 0 | 5 |
-| last_name | 0 | 0 | 1 | 0 | 0 | 0 | 5 |
+| first_name | 0 | 0 | 3 | 1 | 0 | 0 | 2 |
+| last_name | 0 | 0 | 3 | 1 | 0 | 0 | 2 |
 
 ## Every cell that is not exact (categories and flags only)
 
@@ -48,30 +48,23 @@ exact = correct value (green or orange)  |  WRONG-GREEN = wrong and not flagged 
 |---|---|---|---|
 | 1 | date | empty_flagged | conflict, missing_required_field |
 | 1 | commitment | empty_flagged |  |
-| 1 | first_name | empty_flagged | conflict, handwritten_unconfirmed, missing_required_field |
-| 1 | last_name | empty_flagged | handwritten_unconfirmed, missing_required_field |
 | 2 | center | orange_wrong | center_mismatch |
 | 2 | sender | orange_wrong | unknown_sender |
-| 2 | first_name | empty_flagged | handwritten_unconfirmed, region_not_ok, missing_required_field |
-| 2 | last_name | empty_flagged | handwritten_unconfirmed, region_not_ok, missing_required_field |
+| 2 | first_name | empty_flagged | handwritten_unconfirmed, region_not_ok |
+| 2 | last_name | empty_flagged | handwritten_unconfirmed, region_not_ok |
 | 3 | id | empty_flagged | conflict, missing_required_field |
-| 3 | first_name | empty_flagged | handwritten_unconfirmed, missing_required_field |
-| 3 | last_name | empty_flagged | conflict, handwritten_unconfirmed, missing_required_field |
+| 3 | first_name | orange_wrong | handwritten_unconfirmed |
+| 3 | last_name | orange_wrong | conflict, handwritten_unconfirmed |
 | 4 | date | orange_wrong | handwritten, date_single_source |
 | 4 | center | orange_wrong | center_mismatch |
 | 4 | sender | orange_wrong | conflict |
-| 4 | first_name | empty_flagged | conflict, handwritten_unconfirmed, missing_required_field |
-| 4 | last_name | empty_flagged | conflict, handwritten_unconfirmed, missing_required_field |
 | 5 | center | orange_wrong | handwritten |
 | 5 | sender | orange_wrong | unknown_sender |
-| 5 | commitment | orange_wrong |  |
 | 5 | id | orange_wrong | handwritten, region_not_ok |
-| 6 | date | orange_wrong | date_kind_unclear, date_single_source |
 | 6 | center | empty_flagged | missing_required_field |
 | 6 | sender | orange_wrong | unknown_sender |
-| 6 | commitment | confident_wrong |  |
 | 6 | first_name | empty_flagged | missing_required_field |
-| 6 | last_name | empty_flagged | name_label_unknown, missing_required_field |
+| 6 | last_name | empty_flagged | name_label_unknown |
 
 ## Orientation detection
 

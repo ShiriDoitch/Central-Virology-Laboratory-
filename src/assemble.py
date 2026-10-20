@@ -52,11 +52,10 @@ def page_rows(result: dict, today: date | None = None, regions: dict | None = No
         for key in ("first_name", "last_name"):
             d = base[key]
             base[key] = d.model_copy(update={"hints": [*d.hints, H_FULL_NAME_SPLIT]})
-    if not base["first_name"].value and not base["last_name"].value:   # שני השמות ריקים: כתום בשניהם
-        for key in ("first_name", "last_name"):
-            d = base[key]
-            if F_MISSING_REQUIRED not in d.flags:
-                base[key] = d.model_copy(update={"flags": [*d.flags, F_MISSING_REQUIRED]})
+    for key in ("first_name", "last_name"):      # שם ריק אף פעם לא ריק בשקט: בלי דגל אחר שמסביר אותו, הוא לבדיקה
+        d = base[key]
+        if not d.value and not d.flags:
+            base[key] = d.model_copy(update={"flags": [*d.flags, F_MISSING_REQUIRED]})
     for key in ("date", "center", "id"):        # אין ריק שקט בעמוד שסווג כטופס התחייבות
         d = base[key]
         if not d.value and F_MISSING_REQUIRED not in d.flags:

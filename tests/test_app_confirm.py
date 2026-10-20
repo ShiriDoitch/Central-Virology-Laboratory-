@@ -35,7 +35,8 @@ def button(at, key):
 
 
 def test_unreadable_name_shows_no_suggestions_and_says_to_type():
-    at = loaded_app(1)                                            # עמוד 1: אין שתי קריאות מסכימות
+    """עמוד 3: שום קריאה לא עברה את הכללים -> תא ריק, בלי לחצני הצעה, עם "לא נקרא, יש להקליד"."""
+    at = loaded_app(3)
     assert not [b for b in at.button if b.key and b.key.startswith("sg_")]
     assert any("לא נקרא, יש להקליד" in w.value for w in at.warning)
     assert at.session_state["name_overrides"] == {}

@@ -10,7 +10,8 @@ from openpyxl.styles import Alignment, Font, PatternFill
 from openpyxl.utils import get_column_letter
 
 from .assemble import page_rows
-from .rules import COMMITMENT_LABEL_WORDS, F_HANDWRITTEN, H_TWO_READS, Decision, effective_date_kind, is_center_label
+from .rules import (COMMITMENT_LABEL_WORDS, F_CONFLICT, F_HANDWRITTEN, F_HANDWRITTEN_UNCONFIRMED, F_LOW_CONFIDENCE,
+                    H_TWO_READS, Decision, effective_date_kind, is_center_label)
 from .schema import PageExtraction
 
 # (מפתח שדה, כותרת עמודה) לפי סעיף 1
@@ -88,19 +89,25 @@ def _dedupe_keep(items: list[str]) -> list[str]:
     return list(dict.fromkeys(x for x in items if x))
 
 
+# דגלים של **קריאה** (כמה קריאות, כתב יד, ביטחון): ערך שנושא רק אותם מוצג בתא ככתום. דגלים אחרים הם דגלים
+# **מבניים** (האזור לא תקין, שם האב, תווית לא מוכרת / חסרה): הקריאה לא נכנסת לתא גם אם קיימת.
+READING_FLAGS = {F_HANDWRITTEN, F_HANDWRITTEN_UNCONFIRMED, F_CONFLICT, F_LOW_CONFIDENCE}
+
+
 def display_name_cell(cell: Cell) -> Cell:
-    """כלל התצוגה והייצוא של שם שלא אושר על ידי המשתמש (rules.py ו-evaluate.py לא משתנים):
+    """כלל התצוגה והייצוא של שם שלא אושר על ידי המשתמש (evaluate.py לא משתנה):
     - שם בלי דגל (מודפס, ברור): נשאר ירוק.
     - ערך שהדגל היחיד שלו הוא "handwritten" ויש לו שתי קריאות עצמאיות מסכימות (רמז two_readings_agree): מוצג בתא, צהוב
-      (Cell.yellow), לעולם לא ירוק. ערך עם הדגל הזה בלי הרמז (קריאה אחת) מוצג ריק וכתום, כמו כל דגל אחר.
-    - כל ערך עם דגל אחר (region_not_ok, father_name, name_label_unknown, name_label_missing, handwritten_unconfirmed,
-      conflict, low_confidence ...): התא ריק וכתום.
-    - הצעות (alternatives, ולכן גם הלחצנים והטקסט בהערה): רק כששתי קריאות עצמאיות מסכימות (two_readings_agree). קריאה
-      בודדת של כתב יד לא קריא היא רעש, ולכן אינה מוצגת כהצעה: התא ריק וכתום, בלי הצעות ("לא נקרא, יש להקליד")."""
+      (Cell.yellow), לעולם לא ירוק.
+    - **ערך שנושא רק דגלי קריאה אחרים (handwritten_unconfirmed, conflict, low_confidence; 20.10.2026): מוצג בתא
+      ככתום**, כהצעה לאישור, עם הקריאה האחרת ב-alternatives. קודם תא כזה היה ריק.
+    - ערך עם דגל מבני (region_not_ok, father_name, name_label_unknown, name_label_missing): התא ריק וכתום, והקריאה
+      מוצגת כהצעה רק כששתי קריאות מסכימות.
+    - שם לעולם אינו ירוק בלי אישור המשתמשת."""
     agree = H_TWO_READS in cell.hints
+    if cell.value and (not cell.flags or set(cell.flags) <= READING_FLAGS):
+        return replace(cell, alternatives=list(cell.alternatives))
     alternatives = list(cell.alternatives) if agree else []
-    if cell.value and (not cell.flags or (set(cell.flags) == {F_HANDWRITTEN} and agree)):
-        return replace(cell, alternatives=alternatives)
     return Cell(None, None, list(cell.flags), list(cell.hints), _dedupe_keep([cell.value, *alternatives]) if agree else [])
 
 

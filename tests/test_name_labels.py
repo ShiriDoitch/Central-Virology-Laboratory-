@@ -74,20 +74,27 @@ def test_page5_like_two_agreeing_readings_without_labels_are_yellow_with_value()
 
 
 def test_page4_like_disagreeing_readings_without_labels_are_orange_not_green():
-    """עמוד 4: מעבר 1 קרא "אביטל", מעבר 2 קרא "מאור" -> סתירה, כתום, בלי ערך ירוק."""
+    """עמוד 4: מעבר 1 קרא "אביטל", מעבר 2 קרא "מאור" -> מוצגת קריאת המעבר השני ככתום (20.10.2026),
+    לעולם לא ירוק, והקריאה האחרת נשארת כהצעה."""
     d = decide_name(hand("אביטל"), regions(first="מאור", labels_seen=()), "first_name")
     assert F_CONFLICT in d.flags and F_HANDWRITTEN_UNCONFIRMED in d.flags
-    assert d.value is None and d.uncertain
-    assert set(d.alternatives) == {"אביטל", "מאור"}             # שתי הקריאות נשמרות
+    assert d.value == "מאור" and d.uncertain
+    assert d.alternatives == ["אביטל"]
     cell = display_name_cell(as_cell(d))
-    assert not cell.yellow and cell.orange and not cell.value
+    assert not cell.yellow and cell.orange and cell.value == "מאור"
 
 
-def test_single_reading_without_labels_stays_empty_and_flagged():
-    """מעבר 2 לא קרא שם: קריאה אחת בכתב יד נשארת ריקה וכתומה (CLAUDE.md סעיפים 16-17)."""
+def test_single_reading_with_a_valid_region_is_shown_in_orange():
+    """מעבר 2 תקין אבל לא קרא שם: הקריאה היחידה מוצגת ככתום (20.10.2026)."""
     d = decide_name(hand("טובה"), regions(first=None, labels_seen=()), "first_name")
-    assert d.value is None and F_HANDWRITTEN_UNCONFIRMED in d.flags
-    assert d.alternatives == ["טובה"] and d.uncertain
+    assert d.value == "טובה" and F_HANDWRITTEN_UNCONFIRMED in d.flags and d.uncertain
+    assert display_name_cell(as_cell(d)).value == "טובה"
+
+
+def test_single_reading_without_any_second_pass_stays_empty():
+    """בלי מעבר שני בכלל: ההתנהגות הישנה נשמרת (ריק וכתום, הקריאה ב-alternatives)."""
+    d = decide_name(hand("טובה"))
+    assert d.value is None and d.alternatives == ["טובה"] and d.uncertain
 
 
 # ---------- 3. region_ok=false ממשיך לפסול ----------
@@ -102,11 +109,12 @@ def test_region_not_ok_still_discards_the_reading():
 # ---------- 4. סתירה עם תוויות ממשיכה להיות מסומנת (כמו עמוד 3) ----------
 
 def test_page3_like_conflict_with_labels_stays_flagged():
+    """סתירה נשארת מסומנת; הערך המוצג הוא קריאת המעבר השני, כתום (20.10.2026)."""
     r = regions(last="פינקוביץ", labels_seen=("first_name", "last_name", "id_number"), label="משפחה")
     d = decide_name(hand("דרזון", label="משפחה"), r, "last_name")
-    assert F_CONFLICT in d.flags and d.value is None and d.uncertain
-    assert set(d.alternatives) == {"דרזון", "פינקוביץ"}
-    assert not display_name_cell(as_cell(d)).value
+    assert F_CONFLICT in d.flags and d.uncertain
+    assert d.value == "פינקוביץ" and d.alternatives == ["דרזון"]
+    assert display_name_cell(as_cell(d)).orange
 
 
 def test_printed_name_with_a_known_label_is_still_green():

@@ -24,10 +24,11 @@ def save(tmp_path, pages, overrides=None):
 
 
 def test_handwritten_name_is_never_green_without_user_confirmation(tmp_path):
+    """שונה ב-20.10.2026: הקריאה מוצגת בתא כהצעה, אבל התא **כתום ולא ירוק** עד שהמשתמשת מאשרת."""
     wb, _ = save(tmp_path, [handwritten_page()])
     first = wb["תוצאות"].cell(row=2, column=1)
     assert first.fill.fgColor.rgb[-6:] == ORANGE_RGB and first.fill.fgColor.rgb[-6:] != GREEN_RGB
-    assert not first.value                                           # קריאה אחת בכתב יד: ריק וכתום
+    assert first.value == "ישראל"                                    # ההצעה מוצגת, בכתום
 
 
 def test_confirmed_name_is_exported_as_user_confirmed_not_orange(tmp_path):
@@ -90,9 +91,12 @@ def test_confirmed_name_is_formula_protected(tmp_path):
 
 
 def test_confirmation_applies_per_page_not_to_other_pages(tmp_path):
+    """האישור חל על עמוד 1 בלבד: שם מאושר = כחול, ואותו שם בעמוד 2 נשאר הצעה כתומה."""
     wb, _ = save(tmp_path, [handwritten_page(), {**handwritten_page(), "page": 2}], {(1, "first_name"): "ישראל"})
     ws = wb["תוצאות"]
-    assert ws.cell(row=2, column=1).value == "ישראל" and not ws.cell(row=3, column=1).value
+    confirmed, suggested = ws.cell(row=2, column=1), ws.cell(row=3, column=1)
+    assert confirmed.value == "ישראל" and confirmed.fill.fgColor.rgb[-6:] == CONFIRMED_RGB
+    assert suggested.value == "ישראל" and suggested.fill.fgColor.rgb[-6:] == ORANGE_RGB
 
 
 
@@ -119,9 +123,8 @@ import pytest  # noqa: E402
 
 
 @pytest.mark.parametrize("flags", [["region_not_ok"], ["father_name"], ["name_label_unknown"], ["name_label_missing"],
-                                   ["handwritten_unconfirmed"], ["conflict"], ["handwritten", "region_not_ok"],
-                                   ["handwritten", "conflict"], ["handwritten", "low_confidence"], ["low_confidence"]])
-def test_value_with_any_other_flag_is_hidden_and_suggested_only_if_two_readings_agree(flags):
+                                   ["handwritten", "region_not_ok"]])
+def test_value_with_a_structural_flag_is_hidden_and_suggested_only_if_two_readings_agree(flags):
     from src.rules import H_TWO_READS
     single = export.display_name_cell(export.Cell("יונתן", "יונתן", flags, alternatives=["יוני"]))
     assert single.value is None and single.raw is None and single.shown == "" and single.orange
@@ -138,9 +141,21 @@ def test_unreadable_name_cell_has_no_suggestions_and_says_to_type(tmp_path):
     assert name_suggestions(cell) == []
 
 
+@pytest.mark.parametrize("flags", [["handwritten_unconfirmed"], ["conflict"], ["handwritten", "conflict"],
+                                   ["handwritten", "low_confidence"], ["low_confidence"]])
+def test_value_with_a_reading_flag_is_shown_in_orange(flags):
+    """שונה ב-20.10.2026: ערך שנושא רק דגלי קריאה (כתב יד, סתירה, ביטחון) מוצג בתא ככתום, עם הקריאה
+    האחרת כהצעה. לעולם לא ירוק."""
+    cell = export.display_name_cell(export.Cell("יונתן", "יונתן", flags, alternatives=["יוני"]))
+    assert cell.value == "יונתן" and cell.shown == "יונתן" and cell.orange and not cell.yellow
+    assert cell.alternatives == ["יוני"]
+
+
 def test_display_rule_keeps_handwritten_only_with_two_readings_and_unflagged_values():
     from src.rules import H_TWO_READS
-    assert export.display_name_cell(export.Cell("ישראל", "ישראל", ["handwritten"], [H_TWO_READS])).value == "ישראל"
-    assert export.display_name_cell(export.Cell("ישראל", "ישראל", ["handwritten"])).value is None      # קריאה אחת: ריק וכתום
+    agreed = export.display_name_cell(export.Cell("ישראל", "ישראל", ["handwritten"], [H_TWO_READS]))
+    assert agreed.value == "ישראל" and agreed.yellow and not agreed.orange            # שתי קריאות: צהוב
+    single = export.display_name_cell(export.Cell("ישראל", "ישראל", ["handwritten"]))
+    assert single.value == "ישראל" and single.orange and not single.yellow            # קריאה אחת: כתום עם ערך
     assert export.display_name_cell(export.Cell("דנה", "דנה", [])).value == "דנה"
     assert export.display_name_cell(export.Cell(None, None, ["missing_required_field"])).value is None

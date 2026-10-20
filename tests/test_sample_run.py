@@ -29,25 +29,28 @@ def test_page_25_has_three_rows_with_center_948062_in_orange():
         assert r.cells["center"].value == "948062" and r.cells["center"].orange
 
 
-def test_unconfirmed_name_cells_show_only_handwritten_only_agreed_values():
-    shown = {}
+def test_unconfirmed_name_cells_are_never_green():
+    """שונה ב-20.10.2026: קריאת שם מוצגת בתא כהצעה. שם לא מאושר הוא **תמיד** צהוב (שתי קריאות מסכימות)
+    או כתום, ולעולם לא ירוק; תא ריק הוא תמיד כתום."""
+    yellow = {}
     for p, res in pages().items():
         for r in build_rows(res):
             for k in ("first_name", "last_name"):
                 c = r.cells[k]
-                if c.value:
-                    assert c.flags == ["handwritten"] and c.yellow and not c.orange, (p, k, c.value, c.flags)   # צהוב, לעולם לא ירוק
-                    shown[(p, k)] = c.value
-                else:
-                    assert not c.raw and not c.shown, (p, k)
-    assert shown == {(12, "first_name"): "ישראל"}                                    # עמוד 26 (יונתן / פייר) ריק
+                assert c.flags, (p, k, c.value)                     # אף שם אינו ירוק בלי אישור
+                assert c.yellow or c.orange, (p, k, c.value)
+                if c.yellow:
+                    yellow[(p, k)] = c.value
+    assert yellow == {(12, "first_name"): "ישראל"}                  # צהוב רק כששתי קריאות עצמאיות מסכימות
 
 
-def test_page_19_names_are_empty_and_orange_with_no_cohen():
+def test_page_19_names_are_orange_suggestions_not_green():
+    """עמוד 19: הקריאה בכתב יד אינה אמינה ("רמי.רמי."), ולכן היא מוצגת ככתום בלבד - הצעה שממתינה לאישור."""
     for r in build_rows(pages()[19]):
         for k in ("first_name", "last_name"):
-            assert not r.cells[k].shown and r.cells[k].orange
-            assert "כהן" not in r.cells[k].alternatives
+            c = r.cells[k]
+            assert c.orange and not c.yellow, (k, c.value)
+            assert "כהן" not in c.alternatives
 
 
 def test_non_name_columns_match_the_evaluation_decisions():
@@ -75,18 +78,20 @@ def test_sender_patient_field_only_is_now_green_in_the_evaluation():
     assert c["empty_missed"] == 0                                # שגיאה בלי סימון: אין
 
 
-def test_name_suggestions_appear_only_where_two_independent_readings_agree():
-    """רעש מכתב יד לא קריא (למשל "רפאל-ושוב" בעמוד 3) אינו מוצג כהצעה: ריק, כתום, "לא נקרא, יש להקליד"."""
+def test_name_suggestions_follow_the_shown_value():
+    """שונה ב-20.10.2026: כל תא שם שמוצג בו ערך מציע אותו (ואת הקריאה האחרת) כלחצן לאישור.
+    תא שלא נקרא כלל נשאר בלי הצעות: "לא נקרא, יש להקליד"."""
     from src.confirm import name_suggestions
-    suggested = {}
     for p, res in pages().items():
         for r in build_rows(res):
             for k in ("first_name", "last_name"):
-                if name_suggestions(r.cells[k]):
-                    suggested[(p, k)] = name_suggestions(r.cells[k])
-    assert suggested == {(12, "first_name"): ["ישראל"]}
+                c = r.cells[k]
+                if c.value:
+                    assert name_suggestions(c)[0] == c.value, (p, k)
+                elif not c.alternatives:
+                    assert name_suggestions(c) == [], (p, k)
     page3 = build_rows(pages()[3])[0].cells["last_name"]
-    assert page3.shown == "" and page3.orange and page3.alternatives == []
+    assert page3.shown == "" and page3.orange and page3.alternatives == []    # קריאה שנפסלה: בלי הצעה
 
 
 def test_center_filters_on_the_saved_run_page_3_is_clean_and_page_14_keeps_both_centers():
