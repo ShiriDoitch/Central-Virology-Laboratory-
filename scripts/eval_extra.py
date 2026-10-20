@@ -117,20 +117,36 @@ def _rows_from_xlsx(path: Path) -> tuple[list[str], list[dict]]:
         wb.close()
 
 
+def row_page(raw, row_no: int, path: Path) -> int:
+    """מספר העמוד של שורת אמת, או שגיאה שאומרת באיזו שורה הבעיה.
+    שורה עם תוכן ובלי מספר עמוד תקין היא טעות בטבלה, לא שורה שמדלגים עליה בשקט: בלי זה השורה
+    נעלמת מהמדידה ואף אחד לא יודע (נמצא ב-20.10.2026, כששורת ההתחייבות השנייה של עמוד 5 נכתבה
+    בלי מספר עמוד והמדידה הציגה התחייבות אחת לעמוד)."""
+    text = (raw or "").strip()
+    if not text.isdigit() or int(text) < 1:
+        raise ValueError(
+            f'{path.name}: שורה {row_no}: מספר העמוד "{text}" ריק או אינו מספר. '
+            "כל שורת אמת חייבת מספר עמוד; עמוד עם שתי התחייבויות = שתי שורות עם אותו מספר עמוד.")
+    return int(text)
+
+
 def load_truth(path: Path) -> dict[int, list[dict]]:
     """טבלת אמת (xlsx או CSV) -> {עמוד: [שורות אמת]} בפורמט ש-compare_page מצפה לו.
     שורה לכל התחייבות: **כמה שורות עם אותו מספר עמוד מקובצות יחד** (ולא דורסות זו את זו).
     מרכזי (וכל שדה רב-ערכי) נשאר כפי שנכתב, תא אחד מופרד ב-";", והפיצול נעשה בהשוואה (src.evaluate.compare_page).
-    תא התחייבות עם כמה ערכים מופרדים ב-";" מתפצל גם הוא לשורה לכל התחייבות, כדי לסבול את שני הפורמטים."""
+    תא התחייבות עם כמה ערכים מופרדים ב-";" מתפצל גם הוא לשורה לכל התחייבות, כדי לסבול את שני הפורמטים.
+    שורה שיש בה תוכן אבל מספר העמוד שלה ריק או אינו מספר מפילה את הקריאה בשגיאה שאומרת את מספר השורה
+    (row_page); רק שורה ריקה לגמרי מדולגת."""
     header, rows = _rows_from_xlsx(path) if path.suffix.lower() in (".xlsx", ".xlsm") else _rows_from_csv(path)
     missing = [c for c in CSV_COLS if c not in header]
     if missing:
         raise ValueError(f"{path.name}: missing columns {missing}")
     out: dict[int, list[dict]] = {}
-    for cells in rows:
-        if not cells.get("page"):
-            continue
-        page = int(cells["page"])
+    for i, cells in enumerate(rows):
+        row_no = i + 2                                   # שורה 1 היא הכותרת
+        if not any(cells.get(c) for c in CSV_COLS):
+            continue                                     # שורה ריקה לגמרי (זנב הגיליון): אינה שורת אמת
+        page = row_page(cells.get("page"), row_no, path)
         base = {field: cells.get(col) for col, field in CSV_TO_FIELD.items()}
         base["check"] = None                   # אין שדות מוחרגים בסט הזה
         commitments = split_multi(base["commitment"]) or [None]

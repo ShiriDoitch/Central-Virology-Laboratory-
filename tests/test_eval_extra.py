@@ -282,3 +282,35 @@ def test_truth_file_priority_xlsx_then_csv_then_template(tmp_path):
 
 def test_default_truth_candidates_order():
     assert [p.name for p in TRUTH_CANDIDATES] == ["truth.xlsx", "truth.csv", "truth_template.csv"]
+
+
+# ---------- שורת אמת בלי מספר עמוד: שגיאה רועשת, לא דילוג שקט (20.10.2026) ----------
+
+def test_row_without_a_page_number_raises_with_the_row_number(tmp_path):
+    """שורת התחייבות שנייה שנכתבה בלי מספר עמוד הייתה נעלמת מהמדידה בשקט. עכשיו היא שגיאה
+    שאומרת באיזו שורה בקובץ הבעיה (שורה 1 היא הכותרת, ולכן השורה השנייה בנתונים היא שורה 3)."""
+    path = write_truth(tmp_path, "5,טובה,גרין,00112233,944963,18.06.2026,כללית,107646\n",
+                       ",,,,,,,107647\n")
+    with pytest.raises(ValueError) as err:
+        load_truth(path)
+    assert "שורה 3" in str(err.value)
+
+
+def test_non_numeric_page_raises_with_the_row_number(tmp_path):
+    path = write_truth(tmp_path, "1,א,ב,112233,944963,18.06.2026,כללית,107646\n",
+                       "עמוד 2,א,ב,112233,944963,18.06.2026,כללית,107647\n")
+    with pytest.raises(ValueError, match="שורה 3"):
+        load_truth(path)
+
+
+def test_a_fully_empty_row_is_still_skipped(tmp_path):
+    """זנב ריק של גיליון אקסל אינו שורת אמת, ולכן הוא מדולג בשקט כמו קודם."""
+    path = write_truth(tmp_path, "1,א,ב,112233,944963,18.06.2026,כללית,107646\n", ",,,,,,,\n", "  ,,,,,,,\n")
+    assert sorted(load_truth(path)) == [1]
+
+
+def test_xlsx_row_without_a_page_number_raises(tmp_path):
+    path = write_xlsx(tmp_path, [("5", "טובה", "גרין", "00112233", "944963", "18.06.2026", "כללית", "107646"),
+                                 (None, None, None, None, None, None, None, "107647")])
+    with pytest.raises(ValueError, match="שורה 3"):
+        load_truth(path)
