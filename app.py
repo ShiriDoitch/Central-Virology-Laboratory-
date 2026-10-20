@@ -675,7 +675,7 @@ else:
 with st.container(key="secondary"):                         # אזורים משניים: סגורים כברירת מחדל
     with st.expander("פירוט לפי שדה", expanded=False):
         st.dataframe(per_field_counts(export_rows), hide_index=True, width="stretch")
-    with st.expander(f"עמודים שדולגו ({len(skipped)})", expanded=False):
+    with st.expander(f"עמודים שדולגו ({len(skipped)})", expanded=bool(skipped)):   # יש עמוד שדולג: פתוח, לא מוסתר
         if skipped:
             for page, reason in skipped:
                 st.write(f"עמוד {page}: {reason}")

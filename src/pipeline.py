@@ -20,6 +20,7 @@ from .schema import Box, PageExtraction
 
 COLORS = {"patient": "red", "barcode": "blue", "commitment": "green", "receipt": "purple"}
 F_ROTATION_UNRESOLVED = "rotation_unresolved"
+F_FORM_IN_OTHER_ROTATION = "form_in_other_rotation"   # כיוון אחד אמר "טופס התחייבות" והשני לא: מתייחסים כטופס
 
 
 def plan_rotation(local_axis: str, reported: str) -> list[int]:
@@ -191,7 +192,13 @@ def _process_page(pdf_path: str, page: int, force_second_pass: bool = False,
                 continue
             break
         if accepted:
+            form_before_rotation = bool(r1.get("is_commitment_form"))
             r1, images, rotation["applied"] = accepted
+            if form_before_rotation and not r1.get("is_commitment_form"):
+                # שתי הקריאות של אותו עמוד חלוקות: "טופס" באחד הכיוונים מספיק (בסט eval_extra עמוד 2 סומן טופס
+                # לפני הסיבוב ולא-טופס אחריו, והוא טופס). לא נכתב למטמון: שם נשמרת תשובת המודל כפי שהיא.
+                r1 = {**r1, "is_commitment_form": True}
+                page_flags.append(F_FORM_IN_OTHER_ROTATION)
             out["pass1"] = r1
         else:
             rotation["unresolved"] = True

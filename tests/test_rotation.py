@@ -204,3 +204,41 @@ def test_opposite_attempt_also_wrong_is_unresolved_after_two_attempts(monkeypatc
                             b"original+270": page_result("180")}, calls)
     res = process_page("x.pdf", 22)
     assert len(calls) == 3 and res["rotation"]["unresolved"] is True
+
+
+# ---------- "טופס" באחד משני כיווני הקריאה (20.10.2026, מעמוד 2 בסט eval_extra) ----------
+
+def form_result(degrees="0", is_form=True):
+    p = PageExtraction(is_commitment_form=is_form, page_quality="ok", rotation_degrees=degrees)
+    return {"ok": True, "model": "m", "stats": {"api_calls": 1}, **p.model_dump()}
+
+
+def test_form_before_rotation_wins_when_the_rotated_read_says_not_a_form(monkeypatch, flow):
+    """הקריאה לפני הסיבוב אמרה "טופס התחייבות" והקריאה אחרי הסיבוב אמרה שלא: מתייחסים כטופס."""
+    monkeypatch.setattr(pipeline, "text_axis", lambda img: ("vertical", -0.4))
+    calls = []
+    set_pass1(monkeypatch, {b"original": form_result("270", is_form=True),
+                            b"original+270": form_result("0", is_form=False)}, calls)
+    res = process_page("x.pdf", 2)
+    assert res["pass1"]["is_commitment_form"] is True
+    assert res["rotation"]["applied"] == 270                      # הסיבוב עצמו לא משתנה
+    assert pipeline.F_FORM_IN_OTHER_ROTATION in res["page_flags"]
+
+
+def test_both_reads_agree_not_a_form_stays_not_a_form(monkeypatch, flow):
+    monkeypatch.setattr(pipeline, "text_axis", lambda img: ("vertical", -0.4))
+    calls = []
+    set_pass1(monkeypatch, {b"original": form_result("270", is_form=False),
+                            b"original+270": form_result("0", is_form=False)}, calls)
+    res = process_page("x.pdf", 2)
+    assert res["pass1"]["is_commitment_form"] is False
+    assert pipeline.F_FORM_IN_OTHER_ROTATION not in res["page_flags"]
+
+
+def test_upright_page_keeps_the_model_answer(monkeypatch, flow):
+    """בלי סיבוב אין שתי קריאות, ולכן אין מה לאחד."""
+    monkeypatch.setattr(pipeline, "text_axis", lambda img: ("horizontal", 0.9))
+    calls = []
+    set_pass1(monkeypatch, {b"original": form_result("0", is_form=False)}, calls)
+    res = process_page("x.pdf", 1)
+    assert res["pass1"]["is_commitment_form"] is False and res["page_flags"] == []

@@ -2,8 +2,9 @@
 from datetime import date
 
 from .rules import (
-    F_MISSING_REQUIRED, F_MODEL_NOT_FORM, H_FULL_NAME_SPLIT, commitment_numbers, decide_center, decide_id, decide_name,
-    decide_receipt_date, expand_rows, split_full_name_fields, split_full_name_regions, verify_commitments,
+    F_MISSING_REQUIRED, F_MODEL_NOT_FORM, F_NOT_RECOGNIZED_AS_FORM, H_FULL_NAME_SPLIT, commitment_numbers,
+    decide_center, decide_id, decide_name, decide_receipt_date, expand_rows, has_form_signals,
+    split_full_name_fields, split_full_name_regions, verify_commitments,
 )
 from .schema import PageExtraction
 from .senders import decide_sender
@@ -23,10 +24,16 @@ def page_rows(result: dict, today: date | None = None, regions: dict | None = No
         return []
     page = PageExtraction.model_validate(result)
     commitments = commitment_numbers(page.numbers)
+    not_recognized = False
     if not page.is_commitment_form:
-        if not commitments:
-            return []
-        commitments = [c.model_copy(update={"flags": [*c.flags, F_MODEL_NOT_FORM]}) for c in commitments]
+        if commitments:
+            commitments = [c.model_copy(update={"flags": [*c.flags, F_MODEL_NOT_FORM]}) for c in commitments]
+        elif has_form_signals(page):
+            # עמוד בלי מספר התחייבות שהמודל סימן "לא טופס", אבל יש בו סימני טופס (חותמת קבלה / ת"ז / שם):
+            # שורה אחת שכל שדותיה כתומים, כדי שייכנס לתור הבדיקה במקום להישמט בשקט
+            not_recognized = True
+        else:
+            return []                                   # באמת לא טופס: מדולג, ומופיע ברשימת "עמודים שדולגו"
     commitments = verify_commitments(commitments, regions)     # ירוק רק כששני המעברים מסכימים על הספרות
     first, last, split1 = split_full_name_fields(page.first_name, page.last_name)     # שדה "שם מלא": פיצול בקוד
     name_regions, split2 = split_full_name_regions(regions)
@@ -51,8 +58,14 @@ def page_rows(result: dict, today: date | None = None, regions: dict | None = No
         d = base[key]
         if not d.value and F_MISSING_REQUIRED not in d.flags:
             base[key] = d.model_copy(update={"flags": [*d.flags, F_MISSING_REQUIRED]})
+    if not_recognized:                  # כל השדות כתומים, עם הדגל שמסביר למה השורה כאן
+        for key, d in base.items():
+            if F_NOT_RECOGNIZED_AS_FORM not in d.flags:
+                base[key] = d.model_copy(update={"flags": [*d.flags, F_NOT_RECOGNIZED_AS_FORM]})
     rows = expand_rows(base, commitments)
     for r in rows:
         if not r["commitment"] and F_MISSING_REQUIRED not in r["commitment_flags"]:
             r["commitment_flags"] = [*r["commitment_flags"], F_MISSING_REQUIRED]
+        if not_recognized and F_NOT_RECOGNIZED_AS_FORM not in r["commitment_flags"]:
+            r["commitment_flags"] = [*r["commitment_flags"], F_NOT_RECOGNIZED_AS_FORM]
     return rows

@@ -11,7 +11,7 @@ import evidence_view
 from src import service
 from src import ui_theme as ui
 from src.confirm import flag_chips_html, md_text
-from src.export import COLUMNS, FIELD_KEYS
+from src.export import COLUMNS, FIELD_KEYS, skip_reason
 from src.privacy import log_server_error
 
 TITLES = dict(COLUMNS)
@@ -357,11 +357,29 @@ def render_data_management() -> None:
         st.button("מחק את כל הנתונים", key="rec_wipe_all", on_click=_wipe_all, disabled=not confirmed)
 
 
+def skipped_pages(pages: list[dict] | None = None) -> list[tuple[int, str]]:
+    """עמודים מהעיבוד הנוכחי שלא נכנסו לרשומות, עם הסיבה. ברירת המחדל: העמודים שבמצב הסשן."""
+    pages = st.session_state.get("pages") if pages is None else pages
+    return [(p["page"], reason) for p in sorted(pages or [], key=lambda x: x["page"]) if (reason := skip_reason(p))]
+
+
+def render_skipped(pages: list[dict] | None = None) -> None:
+    """עמוד שלא נכנס לרשומות לא נעלם: הוא מוצג כאן במפורש (לא בתוך expander סגור), כדי שאפשר יהיה לפתוח
+    את הקובץ ולבדוק אותו ידנית. עמוד עם סימני טופס כבר אינו מגיע לכאן אלא נכנס כרשומה כתומה (assemble.page_rows)."""
+    rows = skipped_pages(pages)
+    if not rows:
+        return
+    st.warning(f"**{len(rows)} עמודים לא נכנסו לרשומות** (לא זוהו כטופס התחייבות). יש לבדוק אותם בקובץ המקור:")
+    for page, reason in rows:
+        st.markdown(f"- **עמוד {page}**: {reason}")
+
+
 def render(db, he_flag) -> None:
     """מסך הרשומות; ניהול הנתונים (מחיקה מלאה) תמיד בתחתית."""
     msg = st.session_state.pop("rec_wipe_msg", None)
     if msg:
         getattr(st, msg[0])(msg[1])
+    render_skipped()
     _render_main(db, he_flag)
     render_data_management()
 

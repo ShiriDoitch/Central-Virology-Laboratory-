@@ -69,7 +69,10 @@ def test_evaluation_report_for_the_run_is_the_saved_one():
 
 def test_sender_patient_field_only_is_now_green_in_the_evaluation():
     c = evaluate(run_dir=RUN)["counts"]["sender"]
-    assert c["confident_ok"] == 21 and c["orange_ok"] == 2 and c["confident_wrong"] == 0     # היה 16 / 7: חמשת patient_field_only
+    # היה 16 / 7 לפני כלל patient_field_only. orange_ok עלה מ-2 ל-3 ב-20.10.2026: עמוד 8 היה נשמט בשקט
+    # (המודל סימן "לא טופס") ועכשיו נכנס כשורה כתומה עם הגורם השולח הנכון (not_recognized_as_form).
+    assert c["confident_ok"] == 21 and c["orange_ok"] == 3 and c["confident_wrong"] == 0
+    assert c["empty_missed"] == 0                                # שגיאה בלי סימון: אין
 
 
 def test_name_suggestions_appear_only_where_two_independent_readings_agree():
