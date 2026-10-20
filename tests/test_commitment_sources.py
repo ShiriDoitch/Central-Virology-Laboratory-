@@ -64,6 +64,15 @@ def test_known_non_commitment_label_is_rejected():
     assert commitment_from_region(regions("948023", "מרכזי")) == []
 
 
+def test_file_number_label_is_rejected():
+    """מספר תיק (תיק מטופל / תיק במוסד) אינו מספר התחייבות (20.10.2026)."""
+    assert commitment_from_region(regions("4471023", "תיק")) == []
+    assert commitment_from_region(regions("4471023", "מס' תיק:")) == []
+    assert commitment_from_region(regions("4471023", "תיק מטופל")) == []
+    # תווית התחייבות לא נפגעה: המילה "תיק" אינה תת-מחרוזת שלאחת מהן
+    assert commitment_from_region(regions("4471023", "התחייבות"))[0].value == "4471023"
+
+
 def test_region_not_ok_or_too_short_or_missing_is_rejected():
     assert commitment_from_region(regions("66608489", region_ok=False)) == []
     assert commitment_from_region(regions("66608489", ok=False)) == []
