@@ -39,10 +39,11 @@ if str(ROOT) not in sys.path:
 
 from src import extractor                                                      # noqa: E402
 from src.assemble import page_rows                                             # noqa: E402
-from src.evaluate import compare_page, load_barcodes, load_run, norm_value     # noqa: E402
+from src.evaluate import classify, compare_page, load_barcodes, load_run, norm_value   # noqa: E402
 from src.pipeline import process_page, render_model_summary, sum_stats         # noqa: E402
 from src.privacy import is_production, safe_write_text                         # noqa: E402
-from src.rules import F_NO_COMMITMENT, split_multi                             # noqa: E402
+from src.rules import Decision, F_NO_COMMITMENT, apply_field_validity, split_multi     # noqa: E402
+from src.senders import get_matcher                                            # noqa: E402
 from run_step2_dates import BudgetReached, BudgetTracker                       # noqa: E402
 
 PDF = ROOT / "data" / "eval_extra" / "forms.pdf"
@@ -248,10 +249,29 @@ def commitment_cells(truth_rows: list[dict], pred_rows: list[dict]) -> list[dict
     return out
 
 
+def canonical_sender(value: str | None) -> str:
+    """שם גורם שולח -> השם הקנוני מהרשימה הסגורה (src/senders.py), כדי שכינוי ושם קנוני ייחשבו אותו גורם
+    ("וולפסון" = "מרכז רפואי וולפסון"). שם שאינו ברשימה: הטקסט המנורמל כפי שהוא, ולכן ממשיך להיספר כשונה."""
+    if not value or not value.strip():
+        return ""
+    canon, _is_lab = get_matcher().match(value, trusted=True)
+    return norm_value("sender", canon or value)
+
+
+def sender_cell(truth_rows: list[dict], pred_rows: list[dict]) -> dict:
+    """תא גורם שולח, בהשוואה קנונית (מחליף את התא של compare_page; src לא משתנה)."""
+    dec: Decision = pred_rows[0]["sender"] if pred_rows else Decision()
+    truth, pred = canonical_sender(truth_rows[0]["sender"]), canonical_sender(dec.value)
+    return {"truth": truth, "pred": pred, "category": classify(truth == pred, bool(pred), dec.uncertain),
+            "flags": list(dec.flags), "only_handwritten": False}
+
+
 def cells(truth: dict[int, list[dict]], pages: list[int]) -> dict[int, dict | None]:
     """{עמוד: השוואה לכל שדה}. עמוד שנכשל או שאין לו ריצה: None.
     commitment_rows = ההשוואה לכל התחייבות בנפרד; היא שנספרת בדוח, במקום תא ההתחייבות של compare_page
-    (שמשווה את כל מספרי העמוד כקבוצה אחת)."""
+    (שמשווה את כל מספרי העמוד כקבוצה אחת). גורם שולח מושווה קנונית (sender_cell).
+    apply_field_validity מחושב מחדש על תשובת המעבר השני השמורה: field_ok נכתב לתוך p<N>.json בזמן הריצה,
+    ולכן בלי החישוב מחדש הדוח היה מודד את כלל התוויות שהיה בתוקף אז ולא את זה שבקוד עכשיו."""
     results, regions = load_run(OUT, pages)
     barcodes = load_barcodes(OUT, pages)
     out: dict[int, dict | None] = {}
@@ -259,8 +279,12 @@ def cells(truth: dict[int, list[dict]], pages: list[int]) -> dict[int, dict | No
         if not results[p].get("ok"):
             out[p] = None
             continue
-        rows = page_rows(results[p], regions=regions.get(p), barcodes=barcodes.get(p))
-        out[p] = {**compare_page(truth[p], rows), "commitment_rows": commitment_cells(truth[p], rows)}
+        r2 = regions.get(p)
+        if r2 and r2.get("ok") and "patient" in r2:
+            r2 = apply_field_validity(r2)
+        rows = page_rows(results[p], regions=r2, barcodes=barcodes.get(p))
+        out[p] = {**compare_page(truth[p], rows), "sender": sender_cell(truth[p], rows),
+                  "commitment_rows": commitment_cells(truth[p], rows)}
     return out
 
 
