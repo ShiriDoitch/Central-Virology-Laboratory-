@@ -126,9 +126,15 @@ def test_id_invalid_when_id_label_not_seen():
     assert d.value is None and F_REGION_NOT_OK in d.flags
 
 
-def test_no_labels_at_all_invalidates_all_three_fields():
+def test_no_labels_at_all_keeps_names_valid_and_invalidates_the_id():
+    """שונה ב-20.10.2026: חיתוך תקין בלי אף תווית (שם בכתב יד על קו, צילום מסך) אינו פוסל שם — אין תווית
+    לראות, ולכן אין על מה לפסול. הקריאה נכנסת וממשיכה להיות כתומה או צהובה לפי decide_name, לעולם לא ירוקה.
+    ת"ז לא נכללה בחריג."""
     r = apply_field_validity(with_values([], first="דנה", last="לוי", id_="30530668"))
-    assert all(region_state(r, "patient", f) == "not_ok" for f in ("first_name", "last_name", "id_number"))
+    assert region_state(r, "patient", "first_name") == "ok"
+    assert region_state(r, "patient", "last_name") == "ok"
+    assert region_state(r, "patient", "id_number") == "not_ok"
+    assert decide_id([], r).value is None                      # ת"ז בלי תווית: עדיין לא נכנסת
 
 
 def test_without_field_ok_key_legacy_results_stay_valid():

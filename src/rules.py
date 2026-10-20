@@ -11,7 +11,7 @@ from datetime import date, timedelta
 from pydantic import BaseModel, Field
 
 from .center_config import in_center_range
-from .schema import DateCandidate, Field_, NumberCandidate
+from .schema import DateCandidate, Field_, NumberCandidate, PageExtraction
 
 LOW_CONFIDENCE = 0.7   # מתחת לזה: ביטחון נמוך (לא לסמוך על הביטחון שהמודל מצהיר; זה רק סימן נוסף)
 YEAR_SPAN = 1          # טווח שנים סביר סביב השנה הנוכחית
@@ -42,6 +42,7 @@ F_WEAK_LABEL = "weak_label"
 F_COMMITMENT_MISMATCH = "commitment_mismatch"
 F_COMMITMENT_SINGLE_SOURCE = "commitment_single_source"
 F_MODEL_NOT_FORM ="model_says_not_commitment_form"
+F_NOT_RECOGNIZED_AS_FORM = "not_recognized_as_form"   # המודל סימן "לא טופס" אבל יש סימני טופס: שורה אחת, כל השדות כתומים
 F_CENTER_FROM_BARCODE_ONLY = "center_from_barcode_only"
 F_CENTER_BARCODE_EXTRA = "center_barcode_extra"   # ערכי המודל הם תת-קבוצה אמיתית של ערכי הברקוד: יש ברקוד שהמודל לא קרא, כתום
 F_DATE_OUTSIDE_WINDOW = "date_outside_window"    # תאריך קבלה מחוץ לחלון [תאריך דגימה, שליחה/דגימה + 14 יום, לא בעתיד, לא אחרי תוקף]
@@ -171,15 +172,22 @@ def patient_labels_missing(regions: dict | None) -> bool:
 
 
 _FIELD_LABELS = ("first_name", "last_name", "id_number")
+_NAME_FIELDS = ("first_name", "last_name")
 
 
 def apply_field_validity(regions: dict) -> dict:
     """תקינות לפי שדה בחיתוך המטופל: שדה תקין רק אם התווית שלו נראתה (labels_seen). ת"ז תקפה גם כשתוויות השמות
-    לא נראו, ושם תקף רק אם התווית שלו נראתה. שדה לא תקין: הקריאה ממנו לא נכנסת, והשדה כתום (region_not_ok)."""
+    לא נראו, ושם תקף רק אם התווית שלו נראתה. שדה לא תקין: הקריאה ממנו לא נכנסת, והשדה כתום (region_not_ok).
+    חריג (20.10.2026): חיתוך תקין שבו **לא נראתה אף תווית** (labels_seen ריק) אינו פוסל שם. כך נראים טפסים שבהם
+    השם כתוב ביד על קו בלי כיתוב מודפס, וצילומי מסך של מערכת (עמודים 4, 5, 6 בסט eval_extra): אין שם תווית לראות,
+    ולכן אין על מה לפסול, והקריאה נכנסת. היא נשארת כתומה או צהובה לפי כללי decide_name, ולעולם לא ירוקה.
+    ת"ז לא נכללה בחריג: היא לא נדרשה, ומספר בלי תווית הוא מועמד חלש ממילא."""
     seen = set(regions["patient"].get("labels_seen") or [])
     if full_name_label_seen(regions):
         seen |= {"first_name", "last_name"}
-    patient = {**regions["patient"], "field_ok": {f: f in seen for f in _FIELD_LABELS}}
+    no_labels_at_all = not seen
+    patient = {**regions["patient"],
+               "field_ok": {f: (f in seen or (no_labels_at_all and f in _NAME_FIELDS)) for f in _FIELD_LABELS}}
     return {**regions, "patient": patient}
 
 
@@ -568,19 +576,26 @@ _PATIENT_LABEL = re.compile(r"פרטי|משפחה|מטופל|חולה|נבדק|�
 
 
 def is_unknown_name_label(label: str | None) -> bool:
-    """יש תווית, והיא אינה תווית מטופל מוכרת (שם פרטי / שם משפחה / שם המטופל / החולה / הנבדק).
+    """יש תווית, והיא אינה תווית מטופל מוכרת (שם פרטי / שם משפחה / שם המטופל / החולה / הנבדק / שדה שם יחיד).
     בלי תווית בכלל: לא נחשב לא מוכר (המודל לא תמיד מחזיר תווית)."""
+    if is_full_name_label(label):               # "שם מלא" או "שם" לבדה: תווית מטופל מוכרת
+        return False
     return bool(label and label.strip() and not _PATIENT_LABEL.search(label))
 
 
 # ---------- שדה "שם מלא" ----------
 
 _FULL_NAME_LABEL = re.compile(r"שם\s*מלא")
+# תווית "שם" לבדה (עם נקודתיים או מקף בלבד סביבה): שדה שם יחיד, בדיוק כמו "שם מלא". "שם פרטי" / "שם משפחה"
+# אינם נכנסים לכאן (יש להם מילה נוספת), ולכן הם ממשיכים להיחשב תוויות של שדה נפרד.
+_NAME_ONLY_LABEL = re.compile(r"^[\s:：.\-]*שם[\s:：.\-]*$")
 
 
 def is_full_name_label(label: str | None) -> bool:
-    """התווית היא "שם מלא" (שדה אחד לשם פרטי ושם משפחה יחד)."""
-    return bool(label and _FULL_NAME_LABEL.search(label))
+    """התווית היא של שדה שם יחיד (שם פרטי ושם משפחה יחד): "שם מלא", או "שם" לבדה.
+    טפסים רבים מדפיסים "שם" בלבד ליד שדה אחד (למשל עמוד 1 בסט eval_extra: "שם" ובו "טובה גרין"),
+    ולכן היא מחליפה את שתי התוויות הנפרדות, בדיוק כמו "שם מלא"."""
+    return bool(label and (_FULL_NAME_LABEL.search(label) or _NAME_ONLY_LABEL.match(label)))
 
 
 def _split_words(text: str) -> tuple[str, str]:
@@ -974,6 +989,18 @@ def _decide_center_pool(numbers: list[NumberCandidate], barcode_numbers: list[Nu
     if foreign:             # כמה כאלה: התא ריק וכתום, והם הצעות בלבד
         return Decision(flags=[F_NO_CENTER_LABEL], alternatives=foreign)
     return Decision()
+
+
+def has_form_signals(page: PageExtraction) -> bool:
+    """סימנים חזקים לכך שהעמוד הוא בכל זאת טופס, גם כשהמודל סימן is_commitment_form=false (הקביעה הזאת לא יציבה:
+    בסט eval_extra עמוד 2 סומן "טופס" לפני הסיבוב ו"לא טופס" אחריו, אף שיש בו חותמת "התקבל", ת"ז ושם מטופל).
+    סימן = חותמת קבלה של המעבדה, מספר ת"ז, או שם מטופל. עמוד כזה לא נשמט בשקט אלא נכנס כשורה אחת כתומה לבדיקה.
+    (הסימן "הכיוון השני של העמוד אמר טופס" מטופל ב-src/pipeline.py, שרואה את שתי הקריאות.)"""
+    if any(effective_date_kind(d) == "lab_stamp" for d in page.dates):
+        return True
+    if page.id_numbers:
+        return True
+    return bool((page.first_name.value or "").strip() or (page.last_name.value or "").strip())
 
 
 def expand_rows(base: dict, commitments: list[Decision]) -> list[dict]:
