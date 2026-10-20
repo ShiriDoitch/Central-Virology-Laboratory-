@@ -415,6 +415,47 @@ def build_report(truth: dict[int, list[dict]], pages: list[int], stopped: str | 
     return "\n".join(lines) + "\n"
 
 
+DOCS_REPORT = ROOT / "docs" / "eval_extra_report.md"
+
+
+def build_public_report(truth: dict[int, list[dict]], pages: list[int], source: Path) -> str:
+    """גרסה של הדוח **בלי שום נתון מהטפסים**, לשיתוף ב-git: ספירות, קטגוריות, דגלים, סיבוב ומצב עמוד בלבד.
+    אין בה ערכי אמת ואין ערכים שנקראו (שמות, ת"ז, מספרים), ואין חיתוכי תמונה."""
+    cmp = cells(truth, pages)
+    info = meta(pages)
+    done = [p for p in pages if cmp.get(p)]
+    lines = ["# Extra evaluation set: results (no form data)", "",
+             f"6 pages, hand-filled truth table (`{source.name}`). Measurement only: no rule, threshold or config was "
+             "tuned on this set, and it is not part 2.",
+             "", "This file deliberately holds **no value from the forms** - no names, ID numbers, dates, center "
+             "numbers or commitment numbers, and no page crops. Only counts, categories and flags.",
+             "", f"Pages evaluated: {len(done)} of {len(pages)}", "",
+             "## Main fields", ""] + bucket_table(cmp, MAIN_FIELDS, done)
+    lines += ["", "## ID (reported separately, CLAUDE.md section 16)", ""] + bucket_table(cmp, ID_FIELD, done)
+    lines += ["", "## Names (reported separately from ID)", ""] + bucket_table(cmp, NAME_FIELDS, done)
+    lines += ["", "exact = correct value (green or orange)  |  WRONG-GREEN = wrong and not flagged (the metric to "
+              "minimize)  |  wrong-orange = wrong but flagged  |  empty = no value",
+              "", "## Full category breakdown", ""] + detail_table(cmp, done)
+    lines += ["", "## Every cell that is not exact (categories and flags only)", "",
+              "| page | field | category | flags |", "|---|---|---|---|"]
+    for p in pages:
+        if not cmp.get(p):
+            lines.append(f"| {p} | (no run / page failed) | | |")
+            continue
+        for _p, f, c in iter_cells(cmp, [p]):
+            if c["category"] not in ("confident_ok", "orange_ok"):
+                lines.append(f"| {p} | {f} | {c['category']} | {', '.join(c.get('flags') or [])} |")
+    lines += ["", "## Orientation detection", ""] + rotation_table(info, pages)
+    lines += ["", "## Page status", "", "| page | pass 1 model | commitment form | quality | second pass | "
+              "pass 2 model |", "|---|---|---|---|---|---|"]
+    for p in pages:
+        m = info.get(p) or {}
+        p1 = m.get("pass1") or {}
+        lines.append(f"| {p} | {p1.get('model')} | {p1.get('is_commitment_form')} | {p1.get('page_quality')} | "
+                     f"{m.get('second_pass')} | {m.get('pass2_model')} |")
+    return "\n".join(lines) + "\n"
+
+
 def main(argv: list[str]) -> int:
     if is_production():
         print("PRIVACY_MODE=production: this script needs the p<N>.json dumps and the cache; run in dev mode.")
@@ -461,6 +502,10 @@ def main(argv: list[str]) -> int:
     (OUT / "report.md").write_text(text, encoding="utf-8")
     print(text)
     print(f"saved: {OUT / 'report.md'}")
+    if "--docs" in argv:          # גרסה בלי נתוני טפסים, לשיתוף ב-git
+        DOCS_REPORT.parent.mkdir(parents=True, exist_ok=True)
+        DOCS_REPORT.write_text(build_public_report(truth, PAGES, source), encoding="utf-8")
+        print(f"saved (no form data): {DOCS_REPORT}")
     return 0
 
 
