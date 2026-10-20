@@ -6,6 +6,7 @@
 שימוש:
     python scripts/eval_extra.py                 # דוח בלבד, בלי אף קריאה למודל (מהתשובות השמורות ב-outputs/eval_extra)
     python scripts/eval_extra.py --run           # מריץ את הצינור על 6 העמודים (קורא ל-API! רק באישור)
+    python scripts/eval_extra.py --run --pages 5,6   # מריץ עמודים נבחרים בלבד; הדוח תמיד על כל העמודים
     python scripts/eval_extra.py --truth=<path>  # קובץ אמת אחר
 מטמון: במצב dev (ברירת המחדל) תשובות המודל נשמרות ב-data/cache, ולכן הרצה חוזרת של --run לא עולה קריאות.
 
@@ -54,7 +55,9 @@ PAGES = [1, 2, 3, 4, 5, 6]
 ROTATED_PAGES = [5, 6]            # לפי המפתחת: צילומי מסך מסובבים של מסך מערכת
 
 # תקרת קריאות קשיחה: בהגעה לתקרה הריצה נעצרת מיד ולא נשלחת אף בקשה נוספת.
-LIMITS = {"gemini-3.5-flash-lite": 16, "gemini-3.1-flash-lite": 6, "gemini-3.6-flash": 14}
+# הועלתה ל-24 למודל החזק (20.10.2026) אחרי שריצת 6 העמודים נעצרה ב-14/14 כש-9 מ-14 הקריאות נבלעו ב-503 ובטיימאאוט:
+# התקרה נגמרה מניסיונות חוזרים ולא מעבודה. אלה קבועים של סקריפט המדידה בלבד, לא מכסות המערכת (config/quotas.json).
+LIMITS = {"gemini-3.5-flash-lite": 16, "gemini-3.1-flash-lite": 6, "gemini-3.6-flash": 24}
 
 CSV_COLS = ["page", "first_name", "last_name", "id", "center", "receipt_date", "sender", "commitment"]
 # עמודת ה-CSV -> שם השדה בקוד (receipt_date הוא "תאריך קבלת דגימה")
@@ -155,12 +158,38 @@ def truth_path(argv: list[str], candidates: list[Path] | None = None) -> Path:
     return next((p for p in options if p.exists()), options[0])
 
 
-def run_pages(tracker: BudgetTracker) -> tuple[str | None, list[dict]]:
-    """מריץ את הצינור הרגיל על 6 העמודים ושומר p<N>.json לכל עמוד. מחזיר (סיבת עצירה, סטטיסטיקות)."""
+def parse_pages(argv: list[str], pages: list[int] | None = None) -> list[int]:
+    """--pages 5,6 (או --pages=5,6, או טווח --pages 1-3): אילו עמודים **להריץ**. ברירת מחדל: כולם.
+    הדוח נבנה תמיד על כל העמודים, מקובצי p<N>.json שקיימים, כך שעמודים מריצה קודמת לא נעלמים ממנו."""
+    all_pages = pages or PAGES
+    spec = None
+    for i, a in enumerate(argv):
+        if a.startswith("--pages="):
+            spec = a.split("=", 1)[1]
+        elif a == "--pages" and i + 1 < len(argv):
+            spec = argv[i + 1]
+    if not spec:
+        return list(all_pages)
+    out: list[int] = []
+    for part in spec.split(","):
+        part = part.strip()
+        if "-" in part:
+            a, b = part.split("-", 1)
+            out += range(int(a), int(b) + 1)
+        elif part:
+            out.append(int(part))
+    unknown = [p for p in out if p not in all_pages]
+    if unknown:
+        raise ValueError(f"--pages: עמודים שאינם בסט: {unknown} (הסט: {all_pages})")
+    return sorted(dict.fromkeys(out))
+
+
+def run_pages(tracker: BudgetTracker, pages: list[int] | None = None) -> tuple[str | None, list[dict]]:
+    """מריץ את הצינור הרגיל על העמודים שנבחרו ושומר p<N>.json לכל עמוד. מחזיר (סיבת עצירה, סטטיסטיקות)."""
     OUT.mkdir(parents=True, exist_ok=True)
     stopped, stats = None, []
     try:
-        for p in PAGES:
+        for p in pages or PAGES:
             res = process_page(str(PDF), p, debug_dir=OUT)
             safe_write_text(OUT / f"p{p}.json", json.dumps(res, ensure_ascii=False))
             stats += [res["stats"]["pass1"], res["stats"]["pass2"]]
@@ -393,9 +422,11 @@ def main(argv: list[str]) -> int:
             print(f"אזהרה: בעמוד {p} השדות {bad} שונים בין שורות העמוד, והם אמורים לחזור זהים. "
                   "ההשוואה משתמשת בשורה הראשונה.")
     if "--run" in argv:
+        to_run = parse_pages(argv)
+        print(f"מריצה את העמודים {to_run} (הדוח יכסה את כל {PAGES}, מקובצי p<N>.json שקיימים)")
         tracker = BudgetTracker(extractor.TRACKER, LIMITS)
         extractor.TRACKER = tracker
-        stopped, stats = run_pages(tracker)
+        stopped, stats = run_pages(tracker, to_run)
         print(render_model_summary(sum_stats(*stats)))
         print(f"calls this run: {dict(tracker.count)}  (hard limits: {LIMITS})")
     else:
