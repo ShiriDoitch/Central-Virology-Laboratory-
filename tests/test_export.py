@@ -423,4 +423,4 @@ def test_columns_are_the_seven_required_fields_in_the_brief_order():
     """דרישת ההגשה (CLAUDE.md סעיף 1): שבע עמודות, בסדר הזה בדיוק. אותו COLUMNS משמש גם את ייצוא
     הרשומות מהמסד (src/db_export.py), ולכן בדיקה אחת מכסה את שלושת הפורמטים."""
     assert [k for k, _ in COLUMNS] == ["first_name", "last_name", "id", "center", "date", "sender", "commitment"]
-    assert [t for _, t in COLUMNS] == ["שם פרטי", "שם משפחה", 'ת"ז', "מרכזי", "תאריך קבלה", "גורם שולח", "מס' התחייבות"]
+    assert [t for _, t in COLUMNS] == ["שם פרטי", "שם משפחה", 'ת"ז', "מרכזי", "תאריך קבלת דגימה", "גורם שולח", "מס' התחייבות"]

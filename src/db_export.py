@@ -68,7 +68,7 @@ def to_xlsx(recs: list[dict], filenames: dict[int, str]) -> bytes:
                     notes.append("אושר ידנית")
                 if notes:
                     x.comment = Comment("\n".join(notes), "system", width=260, height=90)
-    for letter, w in zip("ABCDEFGHIJK", [16, 18, 16, 22, 16, 30, 20, 12, 28, 8, 12]):
+    for letter, w in zip("ABCDEFGHIJK", [16, 18, 16, 22, 20, 30, 20, 12, 28, 8, 12]):
         ws.column_dimensions[letter].width = w
     buf = io.BytesIO()
     wb.save(buf)

@@ -19,7 +19,7 @@ STATUS_HE = {"pending": "ממתינה", "ready": "מוכנה", "approved": "או
 STATUS_STATE = ui.STATUS_STATE                    # גוון תג הסטטוס: src/ui_theme.py
 COLOR_HE = ui.STATE_LABEL
 SORT_HE = {"page": "סדר במסמך", "upload": "זמן העלאה", "updated": "עודכן לאחרונה", "last_name": "שם משפחה", "first_name": "שם פרטי", "national_id": 'ת"ז',
-           "date": "תאריך קבלה", "sender": "גורם שולח", "commitment": "מס' התחייבות", "status": "סטטוס"}
+           "date": "תאריך קבלת דגימה", "sender": "גורם שולח", "commitment": "מס' התחייבות", "status": "סטטוס"}
 PAGE_SIZES = (25, 50, 100)
 UPLOAD_COL, STATUS_COL, PAGE_COL = "הועלה", "סטטוס", "עמוד"
 COLUMN_OF = {"first_name": "first_name", "last_name": "last_name", "id": "national_id", "center": "center", "date": "receipt_date",
@@ -28,7 +28,7 @@ COLUMN_OF = {"first_name": "first_name", "last_name": "last_name", "id": "nation
 TABLE_FIELDS = ("commitment", "first_name", "last_name", "id", "center", "sender", "date")
 CODE_KEYS = ("id", "center", "commitment")           # קודים: יישור וקריאה כמספר, לא כטקסט עברי
 # רוחב מינימלי בפיקסלים (הרשת מחלקת את הרוחב הפנוי באופן יחסי). עמודות המידע הצדדי (עמוד, הועלה) צרות, כדי שעשר עמודות ייכנסו.
-WIDE_KEYS = {"center": 150, "commitment": 130, "id": 118, "sender": 148, "date": 104, "last_name": 100, "first_name": 92}
+WIDE_KEYS = {"center": 150, "commitment": 130, "id": 118, "sender": 148, "date": 132, "last_name": 100, "first_name": 92}
 META_WIDTH = {PAGE_COL: 54, STATUS_COL: 88, UPLOAD_COL: 116}
 
 
@@ -67,7 +67,7 @@ def render_top(counts: dict) -> str:
 def _active_filters() -> list[str]:
     """אילו מסננים (מלבד החיפוש והסטטוס שבראש המסך) פעילים כרגע, לפי מצב הפקדים: לתג שעל "סינון מתקדם"."""
     on = []
-    for key, label in (("rec_sender", "גורם שולח"), ("rec_dates", "תאריך קבלה"), ("rec_upl_dates", "תאריך העלאה"), ("rec_upload", "קובץ")):
+    for key, label in (("rec_sender", "גורם שולח"), ("rec_dates", "תאריך קבלת דגימה"), ("rec_upl_dates", "תאריך העלאה"), ("rec_upload", "קובץ")):
         if st.session_state.get(key):
             on.append(label)
     if (st.session_state.get("rec_sort") or "page") != "page" or st.session_state.get("rec_desc"):
@@ -93,7 +93,7 @@ def read_filter(options: dict, search: str) -> service.RecordFilter:
                                      format_func=lambda i: "כל הקבצים" if i is None else uploads[i]["filename"])
             sort = c4.selectbox("מיון", list(SORT_HE), key="rec_sort", format_func=lambda k: SORT_HE[k])
             d1, d2, d3 = st.columns([1.6, 1.6, 1.1])
-            rng = d1.date_input("טווח תאריך קבלה (יום.חודש.שנה)", value=(), key="rec_dates", format="DD.MM.YYYY")
+            rng = d1.date_input("טווח תאריך קבלת דגימה (יום.חודש.שנה)", value=(), key="rec_dates", format="DD.MM.YYYY")
             upl = d2.date_input("טווח תאריך העלאה (יום.חודש.שנה)", value=(), key="rec_upl_dates", format="DD.MM.YYYY")
             with d3:
                 st.markdown("<div class='ro-label'>כיוון המיון</div>", unsafe_allow_html=True)
@@ -105,7 +105,7 @@ def read_filter(options: dict, search: str) -> service.RecordFilter:
 
 
 def _table(rows: list[dict]) -> pd.DataFrame:
-    """עמודות הטבלה בסדר הקריאה: מס' התחייבות, שם פרטי, שם משפחה, ת"ז, מרכזי, גורם שולח, תאריך קבלה, עמוד, סטטוס, הועלה.
+    """עמודות הטבלה בסדר הקריאה: מס' התחייבות, שם פרטי, שם משפחה, ת"ז, מרכזי, גורם שולח, תאריך קבלת דגימה, עמוד, סטטוס, הועלה.
     הרשת מצוירת LTR, ולכן סדר הרשימה הפוך לסדר הקריאה (סוף הרשימה = העמודה הימנית)."""
     cols = [UPLOAD_COL, STATUS_COL, PAGE_COL] + [TITLES[k] for k in reversed(TABLE_FIELDS)]
     data = [{**{TITLES[k]: r[COLUMN_OF[k]] or "" for k in TABLE_FIELDS}, UPLOAD_COL: service.upload_time_label(r.get("upload_at")),

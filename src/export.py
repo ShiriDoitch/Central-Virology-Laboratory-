@@ -20,7 +20,7 @@ COLUMNS = [
     ("last_name", "שם משפחה"),
     ("id", 'ת"ז'),
     ("center", "מרכזי"),
-    ("date", "תאריך קבלה"),
+    ("date", "תאריך קבלת דגימה"),
     ("sender", "גורם שולח"),
     ("commitment", "מס' התחייבות"),
 ]
@@ -314,7 +314,7 @@ def build_workbook(pages: list[dict], overrides: dict | None = None) -> tuple[Wo
     main = wb.active
     main.title = "תוצאות"
     main.sheet_view.rightToLeft = True
-    _header(main, [t for _, t in COLUMNS], [16, 18, 16, 22, 16, 30, 20])
+    _header(main, [t for _, t in COLUMNS], [16, 18, 16, 22, 20, 30, 20])
 
     audit = wb.create_sheet("audit")
     _header(audit, ["שורה בגיליון", "עמוד", "שדה", "ערך סופי", "raw", "דגלים", "רמזים", "חלופות", "מעבר ראשון: מודל",

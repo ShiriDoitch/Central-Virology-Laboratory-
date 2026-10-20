@@ -158,7 +158,7 @@ def test_table_columns_in_reading_order(db):
     at.run()
     assert not at.exception
     assert list(reversed(table_rows(at).columns)) == ["מס' התחייבות", "שם פרטי", "שם משפחה", 'ת"ז', "מרכזי", "גורם שולח",
-                                                      "תאריך קבלה", "עמוד", "סטטוס", "הועלה"]
+                                                      "תאריך קבלת דגימה", "עמוד", "סטטוס", "הועלה"]
 
 
 def test_upload_column_and_upload_date_filter_in_ui(db):
