@@ -6,7 +6,7 @@ import json
 import pytest
 from openpyxl import load_workbook
 
-from src import repo, service
+from src import db_export, repo, service
 from tests.test_repo import fields, green_fields
 
 
@@ -67,3 +67,27 @@ def test_empty_selection_and_bad_format(conn):
     assert json.loads(data)["count"] == 0
     with pytest.raises(ValueError):
         service.export_records(conn, service.RecordFilter(), "pdf")
+
+
+# ---------- סימון "לא בטוח" ב-CSV (21.10.2026) ----------
+
+def test_csv_marks_the_uncertain_fields(conn):
+    """ל-CSV אין צבעים, ולכן הוא נושא עמודה שמונה את השדות שדורשים בדיקה (כתום או צהוב).
+    בלעדיה היה זה הייצוא היחיד שבו "לא בטוח" נעלם לגמרי."""
+    data, _, _ = service.export_records(conn, service.RecordFilter(), "csv")
+    rows = list(csv.reader(io.StringIO(data.decode("utf-8-sig"))))
+    assert rows[0][-1] == db_export.UNCERTAIN_COLUMN
+    by_page = {r[9]: r[-1] for r in rows[1:]}            # עמודה "עמוד"
+    assert by_page["2"] == "שם פרטי"                      # היחיד הכתום באותה רשומה
+    assert by_page["1"] == "" and by_page["3"] == ""      # רשומות ירוקות לגמרי
+
+
+def test_csv_uncertain_column_counts_yellow_and_flagged_empty_but_not_confirmed(conn):
+    uid = repo.create_upload(conn, "ב.pdf", "sha-b", 1)
+    rid, _ = repo.save_machine_record(conn, uid, 9, 0, green_fields(
+        first_name=("ישראל", "yellow", ["handwritten"]), last_name=(None, "orange", ["handwritten_unconfirmed"]),
+        sender=("כללית", "green")))
+    repo.edit_field(conn, rid, "center", "944963")        # תיקון ידני: confirmed, לא נספר
+    data, _, _ = service.export_records(conn, service.RecordFilter(upload_id=uid), "csv")
+    row = list(csv.reader(io.StringIO(data.decode("utf-8-sig"))))[1]
+    assert row[-1] == "שם פרטי, שם משפחה"

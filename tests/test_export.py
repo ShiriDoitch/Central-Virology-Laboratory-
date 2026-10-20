@@ -417,3 +417,10 @@ def test_id_center_commitment_are_text_cells_and_keep_leading_zeros(tmp_path):
         c = ws.cell(row=2, column=keys.index(key) + 1)
         assert c.value == value and isinstance(c.value, str) and c.data_type == "s"
         assert c.number_format == "@"
+
+
+def test_columns_are_the_seven_required_fields_in_the_brief_order():
+    """דרישת ההגשה (CLAUDE.md סעיף 1): שבע עמודות, בסדר הזה בדיוק. אותו COLUMNS משמש גם את ייצוא
+    הרשומות מהמסד (src/db_export.py), ולכן בדיקה אחת מכסה את שלושת הפורמטים."""
+    assert [k for k, _ in COLUMNS] == ["first_name", "last_name", "id", "center", "date", "sender", "commitment"]
+    assert [t for _, t in COLUMNS] == ["שם פרטי", "שם משפחה", 'ת"ז', "מרכזי", "תאריך קבלה", "גורם שולח", "מס' התחייבות"]

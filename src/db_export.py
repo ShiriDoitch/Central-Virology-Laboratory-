@@ -1,4 +1,5 @@
 """ייצוא רשומות שמורות (מהמסד) ל-XLSX / CSV / JSON. מקבל רשומות מ-src/service.py (record_detail), בלי SQL.
+סימון "לא בטוח" בשלושת הפורמטים: צבע תא והערה ב-XLSX, color ו-flags ב-JSON, והעמודה "שדות לבדיקה" ב-CSV.
 הגנה מנוסחאות (= + - @) ב-XLSX וב-CSV; ב-JSON הערכים נשמרים כפי שהם. הקידוד של CSV הוא UTF-8 עם BOM כדי שאקסל יקרא עברית."""
 import csv
 import io
@@ -14,6 +15,10 @@ from .repo import FIELD_COLUMN
 
 STATUS_HE = {"pending": "ממתינה", "ready": "מוכנה", "approved": "אושרה"}
 EXTRA_COLUMNS = ["סטטוס", "קובץ", "עמוד", "מזהה רשומה"]
+# ב-CSV אין צבעים ואין הערות תא, ולכן הסימון "לא בטוח" נעלם דווקא בייצוא הזה (תוקן 21.10.2026):
+# עמודה אחרונה שמונה את השדות שדורשים מבט אנושי (כתום או צהוב), בשמות העמודות.
+UNCERTAIN_COLUMN = "שדות לבדיקה"
+UNCERTAIN_COLORS = ("orange", "yellow")
 FORMATS = {
     "xlsx": ("application/vnd.openxmlformats-officedocument.spreadsheetml.sheet", "xlsx"),
     "csv": ("text/csv", "csv"),
@@ -70,12 +75,18 @@ def to_xlsx(recs: list[dict], filenames: dict[int, str]) -> bytes:
     return buf.getvalue()
 
 
+def uncertain_fields(rec: dict) -> str:
+    """שמות העמודות של השדות שדורשים בדיקה אנושית (כתום או צהוב, כולל תא ריק מסומן), מופרדים בפסיק.
+    תא ירוק ותא שהמשתמשת אישרה או תיקנה (confirmed) אינם נספרים."""
+    return ", ".join(title for key, title in COLUMNS if rec["fields"][key]["color"] in UNCERTAIN_COLORS)
+
+
 def to_csv(recs: list[dict], filenames: dict[int, str]) -> bytes:
     out = io.StringIO()
     w = csv.writer(out, lineterminator="\r\n")
-    w.writerow([t for _, t in COLUMNS] + EXTRA_COLUMNS)
+    w.writerow([t for _, t in COLUMNS] + EXTRA_COLUMNS + [UNCERTAIN_COLUMN])
     for rec in recs:
-        w.writerow([protect(v) for v in flat(rec, filenames)])
+        w.writerow([*(protect(v) for v in flat(rec, filenames)), uncertain_fields(rec)])
     return out.getvalue().encode("utf-8-sig")
 
 

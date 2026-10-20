@@ -115,7 +115,11 @@ ui.inject()
 # ---------- טעינה ועיבוד ----------
 
 def load_sample() -> tuple[list[dict], dict[int, bytes]]:
-    """טוען את הריצה השמורה של חלק 1 (בלי API) ואת תמונות העמודים הנקיים (עם הסיבוב שהוחל)."""
+    """טוען את הריצה השמורה של חלק 1 (בלי API) ואת תמונות העמודים הנקיים (עם הסיבוב שהוחל).
+    הדוגמה יושבת תחת outputs/ ו-data/, שאינם ב-git: בעותק טרי של הקוד היא פשוט לא קיימת, ואז
+    glob מחזיר רשימה ריקה והכפתור "מצליח" בשקט בלי להציג כלום (21.10.2026). לכן חוסר נבדק במפורש."""
+    if not SAMPLE_DIR.exists() or not SAMPLE_PDF.exists():
+        raise FileNotFoundError(f"missing sample run ({SAMPLE_DIR}) or sample pdf ({SAMPLE_PDF})")
     pages, images = [], {}
     for f in sorted(SAMPLE_DIR.glob("p*.json"), key=lambda x: int(x.stem[1:])):
         res = json.loads(f.read_text(encoding="utf-8"))
@@ -123,6 +127,8 @@ def load_sample() -> tuple[list[dict], dict[int, bytes]]:
         img = pdf_to_images(str(SAMPLE_PDF), dpi=110, pages=[res["page"]])[0]
         applied = (res.get("rotation") or {}).get("applied")
         images[res["page"]] = rotate_jpeg(img, applied) if applied else img
+    if not pages:
+        raise FileNotFoundError(f"no p<N>.json in {SAMPLE_DIR}")
     return pages, images
 
 
@@ -508,7 +514,8 @@ if sample_clicked:
         st.session_state["field_crops"], st.session_state["name_overrides"] = {}, {}
     except Exception as e:
         log_server_error("load_sample", e)
-        st.error("טעינת הדוגמה נכשלה. פרטים במסוף השרת.")
+        st.error("טעינת הדוגמה נכשלה: הדוגמה (outputs/clean_part1_v4b, data/clean_part1.pdf) אינה בעותק הזה. "
+                 "פרטים במסוף השרת.")
 if run_clicked and upload is not None:
     if upload.size > MAX_UPLOAD_MB * 1024 * 1024:
         st.error(f"הקובץ גדול מדי (מקסימום {MAX_UPLOAD_MB}MB)")

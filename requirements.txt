@@ -1,12 +1,16 @@
+# ASCII only: pip reads this file with the system locale encoding (cp1255 on this machine),
+# so a non-ASCII comment makes "pip install -r requirements.txt" fail with UnicodeDecodeError.
 google-genai
-PyMuPDF
+PyMuPDF>=1.24.3          # the module name "pymupdf" (not fitz) exists from 1.24.3
 Pillow
 opencv-python
+numpy                    # imported directly in src/barcode.py, src/orientation.py (also comes with opencv/pandas)
 pydantic
 pandas
 openpyxl
-streamlit
+streamlit>=1.50          # the UI uses segmented_control, width="stretch" and the theme colors in .streamlit/config.toml
 python-dotenv
 pytest
 anthropic==1.13.0
+httpx                    # imported directly in src/extractor.py to recognise network errors (also comes with anthropic)
 zxing-cpp==3.1.1
