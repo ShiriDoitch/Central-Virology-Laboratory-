@@ -280,6 +280,38 @@ def render_review_bar(conn, flt: service.RecordFilter) -> None:
             render_bulk_approve(flt, counts["safe"])
 
 
+def _open_record(rid: int) -> None:
+    _pin(rid)
+
+
+def render_quality_panel(conn) -> None:
+    """איכות המערכת בשימוש, מתוך מה שכבר שמור (מצבי השדות ויומן השינויים): כמה תאים המכונה שמרה כירוקים,
+    כמה מהם תוקנו בפועל (אמור להיות 0), וכמה תאים נבדקו. בלי שום מספר מוערך."""
+    try:
+        q = service.quality_stats(conn)
+        bad = service.green_edited_cells(conn) if q["green_edited"] else []
+    except Exception as e:
+        log_server_error("quality_stats", e)
+        return
+    with st.expander("איכות המערכת בשימוש", expanded=bool(bad)):
+        tone = "bad" if q["green_edited"] else "ok"
+        st.markdown(f"<div class='rv-metrics'>"
+                    f"<div><span>תאים שהמערכת שמרה כירוקים</span><b>{q['green']}</b></div>"
+                    f"<div class='{tone}'><span>מהם שתוקנו ידנית (צריך 0)</span><b>{q['green_edited']}</b></div>"
+                    f"<div><span>תאים שנבדקו</span><b>{q['reviewed']}</b></div>"
+                    f"<div><span>אושרו בלי שינוי</span><b>{q['confirmed_unchanged']}</b></div>"
+                    f"<div><span>תוקנו</span><b>{q['corrected']}</b></div></div>", unsafe_allow_html=True)
+        st.caption("נמדד מכל מה ששמור במסד: \"ירוק\" = המערכת קראה ערך ולא סימנה אותו לבדיקה. ירוק שתוקן ידנית "
+                   "הוא המקרה החמור, כי שם המערכת הייתה בטוחה וטעתה, ולכן הוא מוצג בנפרד.")
+        if bad:
+            st.error(f"{q['green_edited']} תאים שהמערכת שמרה כירוקים תוקנו ידנית. כדאי להסתכל בהם: "
+                     "ייתכן שצריך לסמן את השדה הזה לבדיקה גם בפעם הבאה.")
+            for c in bad:
+                label = f"רשומה {int(c['record_id'])} · עמוד {int(c['page_no'])} · {TITLES.get(c['field'], c['field'])}"
+                st.button(f"פתחי {label}", key=f"rec_gw_{c['record_id']}_{c['field']}", on_click=_open_record,
+                          args=(int(c["record_id"]),))
+
+
 def render_field_notes(fs: dict, key: str, he_flag) -> None:
     """דגלים וחלופות של שדה, מקופלים. נפתח מעצמו רק בשדה שסומן לבדיקה (כתום), כדי שהכרטיס יישאר שקט."""
     notes = [he_flag(f, key) for f in fs["flags"]]
@@ -449,6 +481,7 @@ def _render_main(db, he_flag) -> None:
         flt = read_filter(options, search)
     st.session_state["_rec_flt"] = flt                                  # לשימוש ה-callbacks (הבאה בתור) ולמבחנים
     render_review_bar(conn, flt)
+    render_quality_panel(conn)
     size = st.session_state.get("rec_size", PAGE_SIZES[1])
     _rows, total = service.query(conn, flt, limit=1, offset=0)
     pages_n = max(1, -(-total // size))

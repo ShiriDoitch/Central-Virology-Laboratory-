@@ -1,5 +1,5 @@
 """בדיקה במבט אחד, הלוגיקה (src/guided_review.py + src/repo.py + src/service.py): מה נכנס לתור הבדיקה,
-באיזה סדר, הניווט בו (דלג / חזרה), והאישור הקבוצתי של רשומות בטוחות.
+באיזה סדר, הניווט בו (דלג / חזרה), האישור הקבוצתי של רשומות בטוחות, ומדדי האיכות.
 בלי API ובלי Streamlit: מסד נתונים זמני שנזרע ביד, בלי תלות בריצה השמורה של חלק 1."""
 import pytest
 
@@ -193,6 +193,54 @@ def test_an_approved_record_leaves_the_review_queue(conn):
     service.approve_safe_records(conn, service.RecordFilter())
     assert [i.page_no for i in queue_of(conn)] == [2]
     assert service.review_counts(conn, service.RecordFilter())["safe"] == 0
+
+
+# ---------- מדדי איכות ----------
+
+def test_quality_counts_green_cells_and_the_green_ones_a_user_corrected(conn):
+    uid = seed(conn, {1: [cells(id=ORANGE, date=BLANK)]})           # חמישה ירוקים, כתום אחד, ריק אחד
+    rid = repo.find_record(conn, uid, 1, 0)
+    assert service.quality_stats(conn) == {"green": 5, "green_edited": 0, "reviewed": 0, "corrected": 0,
+                                           "confirmed_unchanged": 0}
+    repo.edit_field(conn, rid, "id", "123456")                      # תיקון של תא כתום: לא נוגע בירוקים
+    repo.edit_field(conn, rid, "sender", VALUES["sender"])          # אישור של ירוק (אותו ערך) = בלי שינוי
+    q = service.quality_stats(conn)
+    assert (q["green"], q["green_edited"], q["reviewed"], q["corrected"], q["confirmed_unchanged"]) == (5, 0, 2, 1, 1)
+    assert service.green_edited_cells(conn) == []
+    repo.edit_field(conn, rid, "first_name", "אברהם")               # תיקון של תא שהמכונה שמרה כירוק
+    q = service.quality_stats(conn)
+    assert q["green_edited"] == 1 and q["corrected"] == 2
+    assert [(c["field"], c["machine_value"], c["corrected"], c["page_no"]) for c in service.green_edited_cells(conn)]         == [("first_name", "ישראל", "אברהם", 1)]
+
+
+def test_a_yellow_cell_is_not_counted_as_green(conn):
+    """זהב וכתום נושאים דגלים, ולכן תיקון שלהם אינו "ירוק שתוקן"."""
+    uid = seed(conn, {1: [cells(first_name=YELLOW)]})
+    rid = repo.find_record(conn, uid, 1, 0)
+    assert service.quality_stats(conn)["green"] == 6
+    repo.edit_field(conn, rid, "first_name", "אברהם")
+    assert service.quality_stats(conn)["green_edited"] == 0 and service.quality_stats(conn)["corrected"] == 1
+
+
+def test_the_green_counter_survives_a_confirmation_and_a_revert(conn):
+    """אישור משנה את הצבע ל-confirmed, אבל machine_value והדגלים נשמרים, ולכן "ירוק של המכונה" לא נעלם."""
+    uid = seed(conn, {1: [cells()]})
+    rid = repo.find_record(conn, uid, 1, 0)
+    repo.edit_field(conn, rid, "id", "999")
+    assert service.quality_stats(conn)["green"] == 7 and service.quality_stats(conn)["green_edited"] == 1
+    repo.revert_field(conn, rid, "id")
+    assert service.quality_stats(conn)["green"] == 7
+    assert service.quality_stats(conn)["green_edited"] == 1          # היומן זוכר שהמערכת טעתה, גם אחרי ביטול
+
+
+def test_a_machine_rerun_is_not_counted_as_a_user_correction(conn):
+    """עיבוד חוזר כותב machine_update ביומן; רק confirm ו-edit הם פעולות של המשתמשת."""
+    uid = seed(conn, {1: [cells()]})
+    repo.save_machine_record(conn, uid, 1, 0, cells(first_name={"value": "דוד"}))
+    rid = repo.find_record(conn, uid, 1, 0)
+    assert [a["action"] for a in repo.audit_entries(conn, rid) if a["field"] == "first_name"] == ["machine_update"]
+    q = service.quality_stats(conn)
+    assert (q["green_edited"], q["reviewed"], q["corrected"]) == (0, 0, 0)
 
 
 def test_field_states_for_many_records_matches_get_record(conn):

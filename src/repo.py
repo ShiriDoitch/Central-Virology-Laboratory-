@@ -477,3 +477,37 @@ def status_counts(conn, upload_id: int | None = None) -> dict[str, int]:
 def audit_entries(conn, record_id: int) -> list[dict]:
     return [dict(r) for r in conn.execute("SELECT * FROM audit_log WHERE record_id=? ORDER BY id", (record_id,))]
 
+
+# ---------- מדדי איכות מתוך מה שכבר שמור (בלי טבלה חדשה ובלי מדידה חדשה) ----------
+
+# "המכונה שמרה את התא כירוק" = יש ערך מכונה ואין לו אף דגל. זו אותה גזירה של revert_field, והיא שורדת
+# אישור ותיקון של המשתמשת: color מתחלף ל-confirmed, אבל machine_value ו-flags_json נשמרים כפי שהיו.
+# זהב וכתום נושאים דגלים, ולכן אינם נכללים כאן.
+MACHINE_GREEN = "(fs.machine_value IS NOT NULL AND fs.machine_value != '' AND fs.flags_json = '[]')"
+
+
+def quality_counts(conn) -> dict[str, int]:
+    """מה שאפשר למדוד באמת מתוך השימוש: כמה תאים המכונה שמרה כירוקים, כמה מהם המשתמשת תיקנה בפועל
+    (צריך להיות 0: ירוק שתוקן = המערכת הייתה בטוחה וטעתה), וכמה תאים נבדקו (אושרו או תוקנו)."""
+    green = conn.execute(f"SELECT COUNT(*) FROM field_states fs WHERE {MACHINE_GREEN}").fetchone()[0]
+    green_edited = conn.execute(
+        f"SELECT COUNT(*) FROM (SELECT a.record_id, a.field FROM audit_log a "
+        f"JOIN field_states fs ON fs.record_id = a.record_id AND fs.field = a.field "
+        f"WHERE a.action = 'edit' AND {MACHINE_GREEN} GROUP BY a.record_id, a.field)").fetchone()[0]
+    reviewed = conn.execute("SELECT COUNT(*) FROM (SELECT record_id, field FROM audit_log WHERE field IS NOT NULL "
+                            "AND action IN ('confirm', 'edit') GROUP BY record_id, field)").fetchone()[0]
+    corrected = conn.execute("SELECT COUNT(*) FROM (SELECT record_id, field FROM audit_log WHERE field IS NOT NULL "
+                             "AND action = 'edit' GROUP BY record_id, field)").fetchone()[0]
+    return {"green": green, "green_edited": green_edited, "reviewed": reviewed, "corrected": corrected,
+            "confirmed_unchanged": reviewed - corrected}
+
+
+def green_edited_cells(conn, limit: int = 20) -> list[dict]:
+    """התאים שהמכונה שמרה כירוקים ובכל זאת תוקנו ידנית (אמור להיות ריק): רשומה, עמוד, שדה, מה המכונה קראה
+    ומה התיקון האחרון. MAX(a.id) עם עמודות חשופות = שורת התיקון האחרון (התנהגות מוגדרת של SQLite לאגרגט min/max)."""
+    rows = conn.execute(
+        f"SELECT a.record_id, a.field, fs.machine_value, a.new AS corrected, r.page_no, r.upload_id, MAX(a.id) AS last_id "
+        f"FROM audit_log a JOIN field_states fs ON fs.record_id = a.record_id AND fs.field = a.field "
+        f"JOIN records r ON r.id = a.record_id WHERE a.action = 'edit' AND {MACHINE_GREEN} "
+        f"GROUP BY a.record_id, a.field ORDER BY a.record_id, a.field LIMIT ?", (int(limit),))
+    return [{k: r[k] for k in ("record_id", "field", "machine_value", "corrected", "page_no", "upload_id")} for r in rows]

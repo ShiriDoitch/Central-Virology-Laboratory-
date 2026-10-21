@@ -331,7 +331,7 @@ def record_images(conn, record: dict) -> tuple[bytes | None, dict[str, bytes | N
     return image, crops
 
 
-# ---------- בדיקה במבט אחד (תור הבדיקה, אישור קבוצתי) ----------
+# ---------- בדיקה במבט אחד (תור הבדיקה, אישור קבוצתי, מדדי איכות) ----------
 
 def _rows_and_states(conn, flt: RecordFilter) -> tuple[list[dict], dict[int, dict[str, dict]]]:
     """הרשומות שבסינון (בסדר המיון שלו) ומצבי השדות שלהן, בשתי שאילתות: הבסיס לתור הבדיקה ולאישור הקבוצתי."""
@@ -367,6 +367,16 @@ def approve_safe_records(conn, flt: RecordFilter) -> int:
         except Exception as e:
             log_server_error("approve_safe_records", e)
     return done
+
+
+def quality_stats(conn) -> dict[str, int]:
+    """מדדי האיכות של המערכת בשימוש (src/repo.quality_counts): הכול נמדד ממה שכבר שמור, בלי מדידה חדשה."""
+    return repo.quality_counts(conn)
+
+
+def green_edited_cells(conn, limit: int = 20) -> list[dict]:
+    """התאים שהמערכת שמרה כירוקים ושהמשתמשת בכל זאת תיקנה: המקרה שחייב להיות גלוי."""
+    return repo.green_edited_cells(conn, limit)
 
 
 def review_cell_image(conn, record: dict, key: str) -> tuple[bytes | None, bytes | None, tuple | None]:
