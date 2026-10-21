@@ -9,7 +9,9 @@ import pytest
 from PIL import Image
 from streamlit.testing.v1 import AppTest
 
+import review_screen
 from src import page_store, repo, service
+from src.confirm import md_text
 from test_guided_review import BLANK, ORANGE, YELLOW, cells, seed
 
 APP = str(Path(__file__).resolve().parent.parent / "app.py")
@@ -261,3 +263,29 @@ def test_the_review_works_in_production_mode(db, monkeypatch):
     rec = repo.get_record(db, rid)
     assert rec["national_id"] == "123456" and rec["fields"]["last_name"]["cell_confirmed"]
     assert at.session_state["rv_session"].done
+
+
+# ---------- טקסט מהטופס ומיקוד אוטומטי ----------
+
+PAYLOAD = "<img src=x onerror=alert(1)>"
+
+
+def test_a_hostile_reading_is_shown_as_text_not_as_a_tag(db):
+    """ערך וחלופה שמקורם בטופס עוברים ב-ui_theme / md_text, ולכן אינם הופכים לתגית במסך הבדיקה."""
+    seed(db, {1: [cells(first_name={"color": "orange", "flags": ["conflict"], "value": PAYLOAD,
+                                    "alternatives": [PAYLOAD + "2"]})]})
+    at = start_review(records_app())
+    shown = [v for v in texts(at).split("\n") if "onerror" in v]
+    assert shown, "הערך אמור להופיע במסך"
+    assert all("&lt;img" in v and v.count("<img") == 0 for v in shown), shown
+    assert [b.label for b in at.button if b.key == "rv_alt_0"] == [md_text(PAYLOAD + "2")]   # גם תווי Markdown
+
+
+def test_the_focus_script_carries_no_form_data(db):
+    """סקריפט המיקוד סטטי: רק מספר רשומה ושם שדה (קודים של המערכת), בלי שום טקסט מהטופס."""
+    script = review_screen.focus_script("7:first_name")
+    assert script.startswith("<script>") and "/* 7:first_name */" in script
+    assert "aria-label=\"הערך הנכון\"" in script and ".focus()" in script
+    seed(db, {1: [cells(id=ORANGE)]})
+    at = start_review(records_app())
+    assert not at.exception                                              # st.html לא מפיל את המסך
