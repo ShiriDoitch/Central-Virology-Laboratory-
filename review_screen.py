@@ -17,6 +17,9 @@ from src.export import COLUMNS
 from src.privacy import log_server_error
 
 TITLES = dict(COLUMNS)
+TITLE = "בדיקה במבט אחד"
+SUBTITLE = "כל תא שהמערכת לא בטוחה בו, אחד אחרי השני, עם הטופס המקורי"
+PROGRESS_LABEL = "התקדמות בתור"
 SESSION = "rv_session"                    # אובייקט ReviewSession ב-session_state; קיומו = מסך הבדיקה פעיל
 FULL_PAGE_KEY = "rv_full_page"            # מתג "העמוד המלא": מפתח אחד לכל הבדיקה, כדי שהבחירה לא תתאפס בכל תא
 INPUT_LABEL = "הערך הנכון"                # גם ה-aria-label שהמיקוד האוטומטי מחפש
@@ -128,8 +131,8 @@ def render(db, he_flag) -> None:
     sess = session()
     if sess is None:
         return
-    st.markdown(ui.section("בדיקה במבט אחד", "כל תא שהמערכת לא בטוחה בו, אחד אחרי השני, עם הטופס המקורי"),
-                unsafe_allow_html=True)
+    item = None if (sess.closed or sess.done) else sess.current
+    _render_banner(sess, item)
     msg = st.session_state.pop("rv_msg", None)
     if msg:
         getattr(st, msg[0])(msg[1])
@@ -169,12 +172,25 @@ def _render_summary(sess: guided_review.ReviewSession) -> None:
         again.button("המשך הבדיקה", key="rv_resume", on_click=_reopen, width="stretch")
 
 
-def _render_progress(sess: guided_review.ReviewSession, item) -> None:
+def _render_banner(sess: guided_review.ReviewSession, item) -> None:
+    """כרטיס הפתיחה של המסך: כותרת, שורת הסבר, שבבי ההתקדמות ופס ההתקדמות שמחובר לכרטיס.
+    אותו כרטיס מוצג גם בסיכום ובמצב "אין מה לבדוק", אז בלי שבבים ובלי פס (item = None)."""
+    with st.container(key="rv_banner"):
+        chips = ui.stat_chips(progress_chips(sess, item)) if item is not None else ""
+        st.markdown(ui.banner(TITLE, SUBTITLE, chips), unsafe_allow_html=True)
+        if item is not None:
+            total = len(sess.items)
+            st.progress(min(1.0, sess.pos / total) if total else 0.0, text=PROGRESS_LABEL)
+
+
+def progress_chips(sess: guided_review.ReviewSession, item) -> list[tuple]:
+    """מה שמוצג בשבבים: אותם מספרים של guided_review.progress, בלי טקסט נוסף. "נשארו" מודגש, כי זה
+    המספר שהבודקת עוקבת אחריו."""
     p = sess.progress()
-    st.markdown(ui.quiet(f"טופס <b>{p['record_i']}</b> מתוך {p['records']} · תא <b>{p['cell_i']}</b> מתוך {p['cells']}"
-                         f" · נשארו {p['remaining']} תאים · עמוד {int(item.page_no)} בקובץ"), unsafe_allow_html=True)
-    total = len(sess.items)
-    st.progress(min(1.0, sess.pos / total) if total else 0.0)
+    return [("טופס", p["record_i"], f"מתוך {p['records']}", False),
+            ("תא", p["cell_i"], f"מתוך {p['cells']}", False),
+            ("נשארו", p["remaining"], "תאים", True),
+            ("עמוד", int(item.page_no), "בקובץ", False)]
 
 
 def _render_cell(conn, sess: guided_review.ReviewSession, he_flag) -> None:
@@ -184,7 +200,6 @@ def _render_cell(conn, sess: guided_review.ReviewSession, he_flag) -> None:
         sess.advance()
         st.rerun()
     state = record["fields"].get(item.field) or {}
-    _render_progress(sess, item)
     with st.container(border=True, key="rv_card"):
         ev_col, act_col = st.columns([1.3, 1], gap="large")       # RTL: הטופס מימין, הפעולה משמאל
         with ev_col:
@@ -239,7 +254,6 @@ def _render_actions(sess: guided_review.ReviewSession, record: dict, item, state
     with st.form(key=f"rv_form_{item.record_id}_{key}", border=False, clear_on_submit=False):
         st.text_input(INPUT_LABEL, key=in_key, placeholder=INPUT_HINTS.get(key, "כפי שכתוב בטופס"))
         st.form_submit_button("אישור · Enter", type="primary", width="stretch", on_click=_submit, args=(item,))
-    st.caption("Enter מאשר את מה שבשדה: ערך זהה למה שהמערכת קראה נרשם כאישור, ערך שונה נרשם כתיקון.")
     skip_col, back_col, end_col = st.columns(3)
     skip_col.button("דילוג", key="rv_skip", on_click=_skip, width="stretch", help="התא חוזר בסוף הבדיקה")
     back_col.button("חזרה", key="rv_back", on_click=_back, width="stretch", disabled=sess.pos == 0, help="התא הקודם")

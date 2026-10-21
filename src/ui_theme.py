@@ -65,6 +65,23 @@ def field_head(label: str, state: str) -> str:
     return f"<div class='fld-head'><span class='ro-label'>{html.escape(label)}</span>{dot(state)}</div>"
 
 
+def banner(title: str, subtitle: str | None = None, chips: str = "") -> str:
+    """כרטיס פתיחה למסך: כותרת מודגשת, שורת הסבר אחת, ומתחתיהן שבבי המספרים (stat_chips).
+    פס ההתקדמות נוסף אחריו באותו מיכל (.st-key-rv_banner), כך שהוא נראה מחובר לכרטיס."""
+    sub = f"<div class='rv-sub'>{html.escape(subtitle)}</div>" if subtitle else ""
+    return f"<div class='rv-banner'><div class='rv-title'>{html.escape(title)}</div>{sub}{chips}</div>"
+
+
+def stat_chips(items) -> str:
+    """שבבי מספר: לכל אחד תווית, מספר מודגש, והמשך אופציונלי ("מתוך 5"). items = (תווית, מספר, המשך, בולט)."""
+    out = []
+    for label, value, tail, strong in items:
+        extra = f" {html.escape(str(tail))}" if tail else ""
+        out.append(f"<span class='rv-chip{' accent' if strong else ''}'>{html.escape(str(label))} "
+                   f"<b>{html.escape(str(value))}</b>{extra}</span>")
+    return "<div class='rv-chips'>" + "".join(out) + "</div>"
+
+
 def legend(items) -> str:
     """מקרא הצבעים: נקודה + מה זה אומר, לכל מצב. שורה אחת שקטה, תמיד באותו מקום (מתחת לטבלה),
     כך שהצבע לא נשאר לבד ואין צורך לזכור מה הוא אומר. items = רצף של (מצב, משמעות)."""
@@ -197,53 +214,87 @@ code {font-family: 'IBM Plex Mono', monospace !important; direction: ltr; unicod
 /* ============================================================
    5. פקדים: כפתורים, שדות קלט, העלאה, הודעות
    ============================================================ */
-/* תווית הכפתור: Streamlit עוטף אותה ב-<p> בתוך stMarkdownContainer, ולכלל הטיפוגרפיה של אותו <p> (סעיף 2)
-   יש הצהרת color משלו, והצהרה על האלמנט עצמו גוברת תמיד על צבע שנורש מהכפתור. לכן בלי השורה
-   הבאה טקסט הכפתור נשאר כהה גם על רקע כהה: #1C2321 על הטורקיז של כפתור ראשי = 2.26:1,
-   ועל גוון מעבר העכבר 1.74:1. "inherit" מחזיר כל תווית כפתור לצבע שנקבע לכפתור. */
-.stButton > button [data-testid="stMarkdownContainer"], .stDownloadButton > button [data-testid="stMarkdownContainer"],
-.stButton > button [data-testid="stMarkdownContainer"] p, .stDownloadButton > button [data-testid="stMarkdownContainer"] p,
-.stButton > button p, .stDownloadButton > button p {color: inherit !important; font-weight: inherit !important;}
-/* כפתור משני: טקסט כהה על נייר. **כל כלל שחל על "כל כפתור" מחריג את הכפתור הראשי** (:not), כי אחרת
-   הוא גובר עליו: ראו ההסבר בכלל הראשי למטה. ההחרגה נבדקת ב-tests/test_ui_contrast.py. */
-.stButton > button:not([data-testid*="primary"]):not([kind="primary"]),
-.stDownloadButton > button:not([data-testid*="primary"]):not([kind="primary"]) {border-radius: var(--radius-sm); font-weight: 500;
-      border: 1px solid var(--line-2); background: var(--paper); color: var(--ink); transition: border-color .15s, background .15s;}
-.stButton > button:not([data-testid*="primary"]):not([kind="primary"]):hover,
-.stDownloadButton > button:not([data-testid*="primary"]):not([kind="primary"]):hover {border-color: var(--accent); color: var(--accent);}
-.stButton > button, .stDownloadButton > button {border-radius: var(--radius-sm); transition: border-color .15s, background .15s;}
-/* כפתור ראשי ("חילוץ נתונים", "הורדת אקסל", "אישור..."): טקסט לבן ומודגש בכל המצבים.
-   מהכשל שתוקן ב-21.10.2026: בגרסת Streamlit הזאת אין יותר תכונת kind על הכפתור אלא data-testid בלבד
-   ("stBaseButton-primary", ובטופס "stBaseButton-primaryFormSubmit"), ולכן כל הבוררים עם [kind="primary"]
-   לא תפסו, והבורר [data-testid=...] לבדו (0,1,0) הפסיד ל-.stButton > button (0,1,1): הטקסט הכהה של כפתור
-   משני נצבע על הטורקיז הכהה (2.26:1, ובמעבר עכבר 1.74:1). לכן כאן גם בורר עם .stButton (0,2,1) שגובר
-   בכל גרסה, גם הבוררים הישנים (לגרסה שתחזיר את kind), וגם ההחרגה בכלל הכללי למעלה.
-   opacity: 1 כדי שהיחס שנמדד יהיה היחס שרואים. */
-.stButton > button[kind="primary"], .stDownloadButton > button[kind="primary"],
-.stButton > button[kind="primary"]:focus, .stDownloadButton > button[kind="primary"]:focus,
-.stButton > button[kind="primary"]:focus-visible, .stDownloadButton > button[kind="primary"]:focus-visible,
-.stButton > button[kind="primary"]:active, .stDownloadButton > button[kind="primary"]:active,
-.stButton > button[data-testid*="primary"], .stDownloadButton > button[data-testid*="primary"],
-.stButton > button[data-testid*="primary"]:focus, .stDownloadButton > button[data-testid*="primary"]:focus,
-.stButton > button[data-testid*="primary"]:focus-visible, .stDownloadButton > button[data-testid*="primary"]:focus-visible,
-.stButton > button[data-testid*="primary"]:active, .stDownloadButton > button[data-testid*="primary"]:active,
+/* ---------- כפתורים: הבורר הוא הכפתור עצמו, לא העוטף ----------
+   כל כפתור ב-Streamlit נושא data-testid="stBaseButton-<סוג>" **על אלמנט ה-button**, והעוטף שונה לכל סוג:
+   .stButton (st.button), .stDownloadButton, .stFormSubmitButton (st.form_submit_button), .stPopover.
+   לכן כלל שנכתב לעוטף אחד פשוט לא חל על האחרים, וכך נשארה תווית "אישור · Enter"
+   (stBaseButton-primaryFormSubmit, בתוך .stFormSubmitButton) כהה על הטורקיז הכהה: 2.26:1.
+   מכאן כל כלל נכתב על הכפתור לפי ה-testid שלו, ועל התווית שבתוכו.
+   שתי שכבות הגנה שאי אפשר לעקוף אותן:
+   1. **כל** תווית בתוך **כל** כפתור יורשת את צבע הכפתור (הכלל הראשון כאן, ^= על כל המשפחה). Streamlit עוטף
+      את התווית ב-<p> בתוך stMarkdownContainer, ולכלל הטיפוגרפיה של אותו <p> (סעיף 2) יש color משלו שגובר
+      על צבע שנורש. "inherit" מחזיר כל תווית לצבע הכפתור, ולכן תווית לא יכולה "להישאר כהה" על רקע כהה.
+   2. לכל סוג כפתור יש זוג צבעים מוצהר בכל חמשת המצבים (רגיל, מעבר עכבר, מיקוד, לחיצה, מושבת).
+   popover מקבל data-testid משלו (stPopoverButton) ולכן מופיע בנפרד; הכפתורים של segmented_control
+   מקבלים את גוון המצב בסעיף 6, וכאן רק המילה הנבחרת מקבלת לבן על טורקיז.
+   הבדיקה: tests/test_ui_contrast.py פותרת את ה-CSS הזה לכל testid ולכל מצב ובודקת 4.5:1. */
+button[data-testid^="stBaseButton-"] [data-testid="stMarkdownContainer"],
+button[data-testid^="stBaseButton-"] [data-testid="stMarkdownContainer"] p,
+button[data-testid^="stBaseButton-"] p, button[data-testid^="stBaseButton-"] div,
+button[data-testid^="stBaseButton-"] span, button[data-testid="stPopoverButton"] [data-testid="stMarkdownContainer"],
+button[data-testid="stPopoverButton"] [data-testid="stMarkdownContainer"] p,
+button[data-testid="stPopoverButton"] p, button[data-testid="stPopoverButton"] div {color: inherit !important;
+      font-weight: inherit !important;}
+/* כפתור משני (וגם tertiary ו-popover): טקסט כהה על נייר */
+button[data-testid="stBaseButton-secondary"], button[data-testid="stBaseButton-secondaryFormSubmit"],
+button[data-testid="stBaseButton-tertiary"], button[data-testid="stBaseButton-tertiaryFormSubmit"],
+button[data-testid="stPopoverButton"] {border-radius: var(--radius-sm); font-weight: 500; border: 1px solid var(--line-2);
+      background: var(--paper); color: var(--ink); transition: border-color .15s, background .15s;}
+button[data-testid="stBaseButton-secondary"]:hover, button[data-testid="stBaseButton-secondaryFormSubmit"]:hover,
+button[data-testid="stBaseButton-tertiary"]:hover, button[data-testid="stBaseButton-tertiaryFormSubmit"]:hover,
+button[data-testid="stPopoverButton"]:hover {border-color: var(--accent); color: var(--accent); background: var(--paper);}
+button[data-testid="stBaseButton-secondary"]:active, button[data-testid="stBaseButton-secondaryFormSubmit"]:active,
+button[data-testid="stBaseButton-tertiary"]:active, button[data-testid="stBaseButton-tertiaryFormSubmit"]:active,
+button[data-testid="stPopoverButton"]:active {border-color: var(--accent-ink); color: var(--accent-ink); background: var(--paper);}
+button[data-testid="stBaseButton-secondary"]:focus-visible, button[data-testid="stBaseButton-secondaryFormSubmit"]:focus-visible,
+button[data-testid="stBaseButton-tertiary"]:focus-visible, button[data-testid="stBaseButton-tertiaryFormSubmit"]:focus-visible,
+button[data-testid="stPopoverButton"]:focus-visible {color: var(--ink); background: var(--paper);}
+button[data-testid="stBaseButton-secondary"]:disabled, button[data-testid="stBaseButton-secondaryFormSubmit"]:disabled,
+button[data-testid="stBaseButton-tertiary"]:disabled, button[data-testid="stBaseButton-tertiaryFormSubmit"]:disabled,
+button[data-testid="stPopoverButton"]:disabled {background: var(--wash); color: var(--ink-disabled);
+      border-color: var(--line); opacity: 1;}
+/* גלולת segmented_control שאינה נבחרת (בורר המסך, והסינון המהיר שמקבל גוון מצב בסעיף 6) */
+button[data-testid="stBaseButton-segmented_control"], button[data-testid="stBaseButton-pills"] {background: var(--wash);
+      border: 1px solid transparent; border-radius: var(--radius-pill); color: var(--ink-2); font-weight: 500;}
+button[data-testid="stBaseButton-segmented_control"]:hover, button[data-testid="stBaseButton-pills"]:hover,
+button[data-testid="stBaseButton-segmented_control"]:active, button[data-testid="stBaseButton-pills"]:active {background: var(--accent-soft);
+      color: var(--accent-ink);}
+button[data-testid="stBaseButton-segmented_control"]:focus-visible, button[data-testid="stBaseButton-pills"]:focus-visible {background: var(--wash);
+      color: var(--ink-2);}
+button[data-testid="stBaseButton-segmented_control"]:disabled, button[data-testid="stBaseButton-pills"]:disabled {background: var(--wash);
+      color: var(--ink-disabled); opacity: 1;}
+/* כפתור ראשי ("חילוץ נתונים", "הורדת אקסל", "אישור שורה", "אישור · Enter" שבטופס) והמילה הנבחרת
+   ב-segmented_control: לבן מודגש על טורקיז, בכל המצבים. הבוררים עם [kind="primary"] נשארים לגרסה של
+   Streamlit שתחזיר את התכונה הזאת ל-DOM. opacity: 1 כדי שהיחס שנמדד יהיה היחס שרואים. */
+button[data-testid="stBaseButton-primary"], button[data-testid="stBaseButton-primaryFormSubmit"],
+button[data-testid="stBaseButton-segmented_controlActive"], button[data-testid="stBaseButton-pillsActive"],
+button[kind="primary"], .stButton > button[kind="primary"], .stDownloadButton > button[kind="primary"],
 [data-testid="stBaseButton-primary"], [data-testid="stBaseButton-primaryFormSubmit"] {background: var(--accent);
-      border-color: var(--accent); color: var(--on-accent) !important; font-weight: 700 !important; opacity: 1;}
-.stButton > button[kind="primary"]:hover, .stDownloadButton > button[kind="primary"]:hover,
-.stButton > button[data-testid*="primary"]:hover, .stDownloadButton > button[data-testid*="primary"]:hover,
+      border: 1px solid var(--accent); border-radius: var(--radius-sm); color: var(--on-accent) !important;
+      font-weight: 700 !important; opacity: 1; transition: background .15s;}
+button[data-testid="stBaseButton-primary"]:hover, button[data-testid="stBaseButton-primaryFormSubmit"]:hover,
+button[data-testid="stBaseButton-segmented_controlActive"]:hover, button[data-testid="stBaseButton-pillsActive"]:hover,
+button[kind="primary"]:hover, .stButton > button[kind="primary"]:hover,
 [data-testid="stBaseButton-primary"]:hover, [data-testid="stBaseButton-primaryFormSubmit"]:hover {background: var(--accent-hover);
       border-color: var(--accent-hover); color: var(--on-accent) !important;}
-/* מיקוד מהמקלדת: טבעת מסגרת מחוץ לכפתור, כדי שתיראה גם על כפתור ראשי כהה (8.97:1 מול --canvas) */
-.stButton > button:focus-visible, .stDownloadButton > button:focus-visible {outline: 3px solid var(--accent-ink); outline-offset: 2px;}
-/* מושבת: כפתור משני = טקסט כהה על רקע בהיר (4.79:1); כפתור ראשי = לבן מודגש על טורקיז מעומעם (4.99:1).
-   המצב הזה גלוי בממשק: "אישור שורה" נעול כל עוד נשאר בשורה שדה לבדיקה, ו"הורדת אקסל" לפני שיש תוצאות. */
-.stButton > button:not([data-testid*="primary"]):not([kind="primary"]):disabled,
-.stDownloadButton > button:not([data-testid*="primary"]):not([kind="primary"]):disabled {background: var(--wash);
-      color: var(--ink-disabled); border-color: var(--line); opacity: 1;}
-.stButton > button[kind="primary"]:disabled, .stDownloadButton > button[kind="primary"]:disabled,
-.stButton > button[data-testid*="primary"]:disabled, .stDownloadButton > button[data-testid*="primary"]:disabled,
+button[data-testid="stBaseButton-primary"]:active, button[data-testid="stBaseButton-primaryFormSubmit"]:active,
+button[data-testid="stBaseButton-segmented_controlActive"]:active, button[data-testid="stBaseButton-pillsActive"]:active,
+button[kind="primary"]:active, .stButton > button[kind="primary"]:active {background: var(--accent-ink);
+      border-color: var(--accent-ink); color: var(--on-accent) !important;}
+button[data-testid="stBaseButton-primary"]:focus-visible, button[data-testid="stBaseButton-primaryFormSubmit"]:focus-visible,
+button[data-testid="stBaseButton-segmented_controlActive"]:focus-visible, button[data-testid="stBaseButton-pillsActive"]:focus-visible,
+button[kind="primary"]:focus-visible, .stButton > button[kind="primary"]:focus-visible {background: var(--accent);
+      color: var(--on-accent) !important;}
+/* מושבת: ראשי = לבן מודגש על טורקיז מעומעם (4.99:1). המצב גלוי בממשק: "אישור שורה" נעול כל עוד נשאר
+   בשורה שדה לבדיקה, ו"הורדת אקסל" לפני שיש תוצאות. */
+button[data-testid="stBaseButton-primary"]:disabled, button[data-testid="stBaseButton-primaryFormSubmit"]:disabled,
+button[data-testid="stBaseButton-segmented_controlActive"]:disabled, button[data-testid="stBaseButton-pillsActive"]:disabled,
+button[kind="primary"]:disabled, .stButton > button[kind="primary"]:disabled,
 [data-testid="stBaseButton-primary"]:disabled, [data-testid="stBaseButton-primaryFormSubmit"]:disabled {background: var(--accent-muted);
       border-color: var(--accent-muted); color: var(--on-accent) !important; font-weight: 700 !important; opacity: 1;}
+/* מיקוד מהמקלדת: טבעת מסגרת מחוץ לכפתור, כדי שתיראה גם על כפתור ראשי כהה (8.97:1 מול --canvas) */
+button[data-testid^="stBaseButton-"]:focus-visible, button[data-testid="stPopoverButton"]:focus-visible {outline: 3px solid var(--accent-ink);
+      outline-offset: 2px;}
 [data-baseweb="input"], [data-baseweb="select"] > div {border-radius: var(--radius-sm);}
 .stTextInput label p, .stSelectbox label p, .stMultiSelect label p, [data-testid="stDateInput"] label p, .stNumberInput label p,
 [data-testid="stSlider"] label p {font-size: var(--fs-label) !important; color: var(--ink-2) !important;}
@@ -255,6 +306,13 @@ code {font-family: 'IBM Plex Mono', monospace !important; direction: ltr; unicod
 [data-testid="stFileUploaderDropzoneInstructions"] > div::before {content: "גרירת קובץ PDF או תמונה לכאן (עד 25MB)"; font-size: 14px; color: var(--ink-2);}
 [data-testid="stFileUploaderDropzone"] button, [data-testid="stFileUploaderDropzone"] button * {font-size: 0 !important;}
 [data-testid="stFileUploaderDropzone"] button::after {content: "בחירת קובץ"; font-size: 13px !important;}
+/* פס ההתקדמות: הממשק עברית, ולכן הפס מתמלא מהקצה הימני שמאלה. direction: rtl לבד אינו מספיק כאן:
+   המילוי הוא div ברוחב 100% שמוזז ב-transform: translateX(value-100%), כלומר תמיד נגרר מהשמאל (כך בנוי
+   הרכיב ב-Streamlit). לכן המסילה עצמה משוקפת (scaleX(-1)): אין בה טקסט (הכיתוב הוא אלמנט נפרד מעליה),
+   והשיקוף מעביר את המילוי לצד הימני ומגדיל אותו שמאלה. */
+[data-testid="stProgress"], [data-testid="stProgress"] [data-testid="stMarkdownContainer"] p {direction: rtl; text-align: right;}
+[data-testid="stProgressBarTrack"] {transform: scaleX(-1); background: var(--wash);}
+[data-testid="stProgressBarTrack"] > div {background: var(--accent) !important;}
 [data-testid="stAlert"] {border-radius: var(--radius-sm);}
 [data-testid="stAlert"] [data-testid="stMarkdownContainer"] p {font-size: var(--fs-body);}
 [data-testid="stExpander"] {border: 1px solid var(--line); border-radius: var(--radius-sm); background: var(--paper);}
@@ -294,7 +352,11 @@ code {font-family: 'IBM Plex Mono', monospace !important; direction: ltr; unicod
 .st-key-status_filter button:nth-of-type(4) {--chip-bg: var(--yellow-fill); --chip-ink: var(--yellow-ink); --chip-on: var(--yellow-ink);}
 .st-key-status_filter button:nth-of-type(5) {--chip-bg: var(--paper); --chip-ink: var(--ink-3); --chip-on: var(--empty-ink); border: 1px dashed var(--line-2) !important;}
 .st-key-status_filter button:hover {filter: brightness(0.97);}
-.st-key-status_filter button[data-selected="true"] {background: var(--chip-on) !important; color: var(--paper) !important; border-color: var(--chip-on) !important;}
+/* הגלולה הנבחרת: Streamlit מסמן אותה אחרת בין גרסאות (data-selected, kind, ו-data-testid של הסוג הפעיל),
+   ולכן שלושת הסימנים מכוסים. בלי זה פשוט לא רואים איזה סינון פעיל. */
+.st-key-status_filter button[data-selected="true"], .st-key-status_filter button[kind="segmented_controlActive"],
+.st-key-status_filter button[data-testid="stBaseButton-segmented_controlActive"] {background: var(--chip-on) !important;
+      color: var(--paper) !important; border-color: var(--chip-on) !important;}
 .st-key-focus_wrap {background: var(--accent-soft); border: 1px solid var(--accent-line); border-radius: var(--radius-pill);
       padding: 5px var(--sp-4) !important; width: fit-content; margin-inline-start: auto;}
 .st-key-focus_wrap label p {font-size: var(--fs-label) !important; font-weight: 600 !important; color: var(--accent-ink) !important; white-space: nowrap;}
@@ -312,7 +374,10 @@ code {font-family: 'IBM Plex Mono', monospace !important; direction: ltr; unicod
 .st-key-rec_counters .stButton > button {border-radius: var(--radius-pill); background: var(--wash); border-color: transparent;
       color: var(--ink-2); font-size: var(--fs-label); font-weight: 500; min-height: 2.2rem; padding: 0 var(--sp-4); white-space: nowrap;}
 .st-key-rec_counters .stButton > button:hover {border-color: var(--accent-line); background: var(--accent-soft); color: var(--accent-ink);}
-.st-key-rec_counters .stButton > button[kind="primary"] {background: var(--accent); border-color: var(--accent); color: var(--on-accent);}
+/* המונה שנבחר (type="primary"): הבורר לפי data-testid, כי kind אינו ב-DOM בגרסה הזאת */
+.st-key-rec_counters .stButton > button[kind="primary"],
+.st-key-rec_counters button[data-testid="stBaseButton-primary"] {background: var(--accent) !important;
+      border-color: var(--accent) !important; color: var(--on-accent) !important;}
 .st-key-rec_top .stTextInput input {font-size: var(--fs-body); height: 2.3rem;}
 .st-key-rec_filters [data-testid="stExpander"] {border: 1px solid var(--line); background: var(--paper);}
 .st-key-rec_filters [data-testid="stExpander"] summary p {font-weight: 500; color: var(--ink-2); font-size: var(--fs-label);}
@@ -377,6 +442,22 @@ code {font-family: 'IBM Plex Mono', monospace !important; direction: ltr; unicod
 .st-key-rv_chips .stButton > button {min-height: 2rem; padding: 2px var(--sp-4); border-radius: var(--radius-pill);
       background: var(--accent-soft); border-color: var(--accent-line); color: var(--accent-ink);}
 .st-key-rv_chips .stButton > button:hover {background: #DCE8EA;}
+/* באנר הבדיקה: כרטיס אחד עם כותרת, שורת הסבר, שבבי התקדמות ופס ההתקדמות צמוד לתחתית */
+.st-key-rv_banner {background: var(--paper) !important; border: 1px solid var(--line) !important;
+      border-top: 3px solid var(--accent) !important; border-radius: var(--radius) !important; box-shadow: var(--shadow);
+      padding: var(--sp-3) var(--sp-4) var(--sp-2) !important; margin-bottom: var(--sp-2);}
+.st-key-rv_banner [data-testid="stVerticalBlock"] {gap: var(--sp-1);}
+.st-key-rv_banner [data-testid="stProgress"] {padding: 0; margin: 2px 0 0;}
+.st-key-rv_banner [data-testid="stProgress"] [data-testid="stMarkdownContainer"] {display: none;}
+.rv-banner .rv-title {font-size: var(--fs-page); font-weight: 700; color: var(--ink); line-height: var(--lh-tight);}
+.rv-banner .rv-sub {font-size: var(--fs-body); color: var(--ink-2); line-height: var(--lh-body); margin-top: 2px;}
+.rv-chips {display: flex; flex-wrap: wrap; gap: 6px var(--sp-2); margin: var(--sp-2) 0 var(--sp-1);}
+.rv-chip {display: inline-flex; align-items: baseline; gap: 5px; background: var(--wash); border: 1px solid var(--line);
+      border-radius: var(--radius-pill); padding: 3px var(--sp-3); font-size: var(--fs-label); color: var(--ink-3);
+      white-space: nowrap;}
+.rv-chip b {font-size: var(--fs-section); font-weight: 700; color: var(--ink); font-variant-numeric: tabular-nums;}
+.rv-chip.accent {background: var(--accent-soft); border-color: var(--accent-line); color: var(--accent-ink);}
+.rv-chip.accent b {color: var(--accent-ink);}
 .rv-field {display: flex; align-items: center; gap: var(--sp-3); margin: 0 0 var(--sp-2);}
 .rv-field .rv-name {font-size: var(--fs-section); font-weight: 700; color: var(--ink);}
 .rv-none {font-size: var(--fs-cap); color: var(--ink-3);}

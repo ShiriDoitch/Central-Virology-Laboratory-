@@ -11,6 +11,7 @@ import pytest
 from streamlit.testing.v1 import AppTest
 
 from src import repo, service, status, ui_text
+from src import ui_theme as ui
 from test_guided_review import BLANK, FLAGGED_BLANK, ORANGE, VALUES, YELLOW, cells, seed
 
 APP = str(Path(__file__).resolve().parent.parent / "app.py")
@@ -263,3 +264,62 @@ def test_raw_model_readings_are_a_dev_tool_only(tmp_path, monkeypatch):
     labels = [e.label for e in prod.get("expander")]
     assert RAW_READINGS not in labels
     assert labels, "שאר המרחיבים במסך נשארים"
+
+
+# ---------- 2: פס ההתקדמות מתמלא מימין לשמאל ----------
+
+PROGRESS_RULES = {sel.strip(): body for sel, body in
+                  [(m.group(1), m.group(2)) for m in re.finditer(r"([^{}]+)\{([^}]*)\}", re.sub(r"/\*.*?\*/", "", ui.CSS, flags=re.S))]
+                  if "stProgress" in sel}
+
+
+def test_the_progress_bar_fills_from_the_right():
+    """הממשק עברית, ולכן הפס מתמלא מהקצה הימני שמאלה. direction: rtl לבד אינו מספיק: המילוי הוא div
+    ברוחב 100% שמוזז ב-transform (כך בנוי הרכיב ב-Streamlit), ולכן המסילה עצמה משוקפת."""
+    rtl = [body for sel, body in PROGRESS_RULES.items() if '[data-testid="stProgress"]' in sel]
+    assert rtl and any("direction: rtl" in body for body in rtl)
+    track = [body for sel, body in PROGRESS_RULES.items()
+             if '[data-testid="stProgressBarTrack"]' in sel and "> div" not in sel]
+    assert track and all("scaleX(-1)" in body for body in track)
+
+
+def test_both_progress_bars_get_the_same_rule():
+    """כלל הכיוון אינו מוגבל למסך אחד (אין בו .st-key-), ולכן הוא חל על פס העיבוד ועל פס הבדיקה גם יחד.
+    כלל מרווח של פס מסוים כן יכול להיות ממוקד: הוא אינו נוגע בכיוון."""
+    direction = [sel for sel, body in PROGRESS_RULES.items() if "direction: rtl" in body or "scaleX(-1)" in body]
+    assert direction and all("st-key-" not in sel for sel in direction)
+
+
+# ---------- 3 + 4: הכפתור נושא את הרמז, ובלי שורת עזר מתחתיו ----------
+
+@needs_sample
+def test_the_enter_hint_lives_only_on_the_button(tmp_path, monkeypatch):
+    """ההסבר "Enter מאשר את מה שבשדה..." הוסר מהמסך; המילה Enter נשארת על הכפתור, והכלל עצמו
+    (ערך זהה = אישור, ערך שונה = תיקון) מתועד ב-README."""
+    monkeypatch.setenv("APP_DB_PATH", str(tmp_path / "hint.db"))
+    conn = repo.connect(tmp_path / "hint.db")
+    page = json.loads((Path("outputs/clean_part1_v4b") / "p1.json").read_text(encoding="utf-8"))
+    store = service.Persister(conn, "a.pdf", b"hint-bytes")
+    store.start(1)
+    store.page(page)
+    store.finish()
+    at = AppTest.from_file(APP, default_timeout=120)
+    at.session_state["view"] = "records"
+    at.run()
+    at.button(key="rev_start").click().run()
+    assert not at.exception, at.exception
+    labels = [b.label for b in at.button if b.key and b.key.startswith("FormSubmitter")]
+    assert labels == ["אישור · Enter"]
+    for text in [c.value for c in at.caption]:
+        assert "Enter" not in text, text
+    readme = (Path(__file__).resolve().parent.parent / "README.md").read_text(encoding="utf-8")
+    assert "ערך זהה למה שהמערכת קראה נרשם כאישור, ערך שונה נרשם כתיקון" in readme
+
+
+def test_the_review_banner_keeps_every_number_with_hierarchy():
+    """כל המספרים של guided_review.progress מופיעים בשבבים, עם המספר מודגש."""
+    chips = ui.stat_chips([("טופס", 2, "מתוך 2", False), ("נשארו", 4, "תאים", True)])
+    assert "טופס <b>2</b> מתוך 2" in chips and "נשארו <b>4</b> תאים" in chips
+    assert "class='rv-chip accent'" in chips                      # "נשארו" מודגש בגוון המותג
+    card = ui.banner("בדיקה במבט אחד", "שורת הסבר", chips)
+    assert "class='rv-title'" in card and "class='rv-sub'" in card and chips in card
