@@ -1,5 +1,6 @@
 """בדיקה במבט אחד, הלוגיקה (src/guided_review.py + src/repo.py + src/service.py): מה נכנס לתור הבדיקה,
-באיזה סדר, והניווט בו (דלג / חזרה). בלי API ובלי Streamlit: מסד נתונים זמני שנזרע ביד, בלי תלות בריצה השמורה של חלק 1."""
+באיזה סדר, הניווט בו (דלג / חזרה), והאישור הקבוצתי של רשומות בטוחות.
+בלי API ובלי Streamlit: מסד נתונים זמני שנזרע ביד, בלי תלות בריצה השמורה של חלק 1."""
 import pytest
 
 from src import guided_review, repo, service
@@ -82,7 +83,7 @@ def test_a_page_with_two_rows_gives_a_cell_per_row(conn):
 
 def test_review_counts_match_the_queue(conn):
     seed(conn, {1: [cells(id=ORANGE, date=ORANGE)], 2: [cells()], 3: [cells(center=BLANK)]})
-    assert service.review_counts(conn, service.RecordFilter()) == {"cells": 3, "records": 2}
+    assert service.review_counts(conn, service.RecordFilter()) == {"cells": 3, "records": 2, "safe": 1}
 
 
 # ---------- הניווט ----------
@@ -137,6 +138,61 @@ def test_summary_reports_only_what_was_measured(conn):
     assert s == {"records": 2, "cells": 3, "seconds": 30.0, "skips": 0, "per_cell": 10.0}
     assert guided_review.ReviewSession(items=[], started_at=5.0).summary(5.0)["per_cell"] is None
     assert guided_review.duration_he(30) == "30 שניות" and guided_review.duration_he(95) == "1 דק' ו-35 שניות"
+
+
+# ---------- אישור קבוצתי של רשומות בטוחות ----------
+
+def test_safe_record_needs_every_cell_green_without_a_flag_or_confirmed(conn):
+    assert guided_review.is_safe_cell({"color": "green", "flags": [], "cell_confirmed": False})
+    assert guided_review.is_safe_cell({"color": "orange", "flags": ["conflict"], "cell_confirmed": True})
+    assert not guided_review.is_safe_cell({"color": "green", "flags": ["handwritten"], "cell_confirmed": False})
+    for color in ("orange", "yellow", "empty"):
+        assert not guided_review.is_safe_cell({"color": color, "flags": [], "cell_confirmed": False})
+    fields = {k: {"color": "green", "flags": [], "cell_confirmed": False} for k in FIELD_KEYS}
+    assert guided_review.is_safe_record({"status": "ready"}, fields)
+    assert not guided_review.is_safe_record({"status": "approved"}, fields)
+    assert not guided_review.is_safe_record({"status": "ready"}, {k: v for k, v in fields.items() if k != "id"})
+
+
+def test_bulk_approve_takes_only_the_safe_records_and_is_undoable(conn):
+    uid = seed(conn, {1: [cells()], 2: [cells(id=ORANGE)], 3: [cells(date=BLANK)], 4: [cells()]})
+    safe = {repo.find_record(conn, uid, 1, 0), repo.find_record(conn, uid, 4, 0)}
+    assert set(service.safe_record_ids(conn, service.RecordFilter())) == safe
+    assert service.approve_safe_records(conn, service.RecordFilter()) == 2
+    assert {r["id"] for r in repo.search_records(conn, statuses=["approved"], limit=None)[0]} == safe
+    assert service.approve_safe_records(conn, service.RecordFilter()) == 0          # כבר מאושרות: אין מה לאשר שוב
+    for rid in safe:                                     # שורה ביומן השינויים לכל רשומה, וביטול האישור עובד
+        assert [a["action"] for a in repo.audit_entries(conn, rid) if a["action"] == "approve"] == ["approve"]
+        repo.unapprove_record(conn, rid)
+        assert repo.get_record(conn, rid)["status"] == "ready"
+
+
+def test_bulk_approve_never_touches_a_record_with_a_cell_to_review(conn):
+    seed(conn, {1: [cells(first_name=YELLOW)], 2: [cells(center=FLAGGED_BLANK)], 3: [cells(sender=ORANGE)]})
+    assert service.approve_safe_records(conn, service.RecordFilter()) == 0
+    assert repo.status_counts(conn)["approved"] == 0
+
+
+def test_bulk_approve_includes_a_record_the_user_confirmed(conn):
+    uid = seed(conn, {1: [cells(id=ORANGE)]})
+    rid = repo.find_record(conn, uid, 1, 0)
+    assert service.safe_record_ids(conn, service.RecordFilter()) == []
+    repo.edit_field(conn, rid, "id", "123456")                                      # תיקון ידני = תא מאושר
+    assert service.safe_record_ids(conn, service.RecordFilter()) == [rid]
+
+
+def test_bulk_approve_respects_the_filter(conn):
+    seed(conn, {1: [cells()], 2: [cells(sender={"value": "כללית"})]})
+    assert service.approve_safe_records(conn, service.RecordFilter(senders=["כללית"])) == 1
+    assert repo.status_counts(conn)["approved"] == 1
+
+
+def test_an_approved_record_leaves_the_review_queue(conn):
+    """אישור קבוצתי ותור הבדיקה מסתכלים על אותם נתונים: רשומה שאושרה לא תוצג יותר לבדיקה."""
+    uid = seed(conn, {1: [cells()], 2: [cells(id=ORANGE)]})
+    service.approve_safe_records(conn, service.RecordFilter())
+    assert [i.page_no for i in queue_of(conn)] == [2]
+    assert service.review_counts(conn, service.RecordFilter())["safe"] == 0
 
 
 def test_field_states_for_many_records_matches_get_record(conn):

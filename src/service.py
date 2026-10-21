@@ -331,7 +331,7 @@ def record_images(conn, record: dict) -> tuple[bytes | None, dict[str, bytes | N
     return image, crops
 
 
-# ---------- בדיקה במבט אחד (תור הבדיקה) ----------
+# ---------- בדיקה במבט אחד (תור הבדיקה, אישור קבוצתי) ----------
 
 def _rows_and_states(conn, flt: RecordFilter) -> tuple[list[dict], dict[int, dict[str, dict]]]:
     """הרשומות שבסינון (בסדר המיון שלו) ומצבי השדות שלהן, בשתי שאילתות: הבסיס לתור הבדיקה ולאישור הקבוצתי."""
@@ -345,8 +345,28 @@ def review_queue(conn, flt: RecordFilter) -> list[guided_review.ReviewItem]:
 
 
 def review_counts(conn, flt: RecordFilter) -> dict[str, int]:
-    """המספרים שמעל הטבלה: כמה תאים לבדיקה ובכמה טפסים."""
+    """המספרים שמעל הטבלה: כמה תאים לבדיקה, בכמה טפסים, וכמה רשומות בטוחות לאישור קבוצתי."""
     return guided_review.queue_counts(*_rows_and_states(conn, flt))
+
+
+def safe_record_ids(conn, flt: RecordFilter) -> list[int]:
+    """הרשומות שבסינון שכל תאיהן ירוקים בלי דגל או מאושרים ידנית, ושאינן מאושרות כבר."""
+    rows, states = _rows_and_states(conn, flt)
+    return [r["id"] for r in rows if guided_review.is_safe_record(r, states.get(r["id"]) or {})]
+
+
+def approve_safe_records(conn, flt: RecordFilter) -> int:
+    """מאשר את כל הרשומות הבטוחות שבסינון. הרשימה נבנית כאן מחדש (ולא מהמספר שהוצג למשתמשת), כך שרשומה
+    שהשתנתה בינתיים לא תאושר בטעות. כל אישור עובר ב-approve_row: שורה ביומן השינויים, ומחיקת תמונת העמוד
+    כשכל שורותיו אושרו. מחזיר כמה רשומות אושרו (כשל ברשומה אחת נרשם בשרת וממשיכים לשאר)."""
+    done = 0
+    for rid in safe_record_ids(conn, flt):
+        try:
+            approve_row(conn, rid)
+            done += 1
+        except Exception as e:
+            log_server_error("approve_safe_records", e)
+    return done
 
 
 def review_cell_image(conn, record: dict, key: str) -> tuple[bytes | None, bytes | None, tuple | None]:

@@ -233,22 +233,51 @@ def _revert(rid: int, key: str) -> None:
         st.session_state["rec_msg"] = ("success", "הערך הוחזר להצעת המערכת.")
 
 
-# ---------- בדיקה במבט אחד: פתיחת הבדיקה ----------
+# ---------- בדיקה במבט אחד: פתיחת הבדיקה, אישור קבוצתי ----------
+
+def _bulk_approve(flt: service.RecordFilter) -> None:
+    """מאשר את כל הרשומות הבטוחות שבסינון. הרשימה נבנית מחדש בשירות, ולכן המספר שהוצג אינו קובע מה מאושר."""
+    conn = service.open_connection()
+    try:
+        n = service.approve_safe_records(conn, flt)
+    except Exception as e:
+        log_server_error("approve_safe_records", e)
+        st.session_state["rec_msg"] = ("error", "האישור הקבוצתי נכשל (פרטים במסוף השרת).")
+        return
+    st.session_state["rec_bulk_ok"] = False                     # התיבה חוזרת למצב לא מסומן
+    st.session_state["_rec_gen"] = st.session_state.get("_rec_gen", 0) + 1
+    st.session_state["rec_msg"] = (("success", f"אושרו {n} רשומות בטוחות.") if n else
+                                   ("info", "לא נמצאו רשומות בטוחות לאישור בסינון הפעיל."))
+
+
+def render_bulk_approve(flt: service.RecordFilter, safe: int) -> None:
+    """אישור קבוצתי: קודם המספר, ואז תיבת סימון וכפתור. רשומה שיש בה תא לבדיקה לא נכללת לעולם."""
+    with st.popover(f"אשרי את כל הרשומות הבטוחות  {safe}", disabled=safe == 0):
+        st.markdown(ui.quiet(f"<b>{safe}</b> רשומות שבהן כל שבעת השדות ירוקים בלי דגל או אושרו על ידך. "
+                             "רשומה שיש בה תא לבדיקה (כתום, זהב או ריק) אינה נכללת, וגם לא רשומה שכבר אושרה."),
+                    unsafe_allow_html=True)
+        ok = st.checkbox("ראיתי את המספר ואני מאשרת", key="rec_bulk_ok")
+        st.button("אשרי את הרשומות", key="rec_bulk_go", on_click=_bulk_approve, args=(flt,), type="primary",
+                  disabled=not ok, width="stretch")
+        st.caption("כל אישור ניתן לביטול ברשומה עצמה (\"בטלי אישור\").")
+
 
 def render_review_bar(conn, flt: service.RecordFilter) -> None:
-    """שורה אחת מעל הטבלה: התחלת בדיקה מונחית על הרשומות שבסינון הפעיל."""
+    """שורה אחת מעל הטבלה: התחלת בדיקה מונחית על הרשומות שבסינון, ואישור קבוצתי של הרשומות הבטוחות."""
     try:
         counts = service.review_counts(conn, flt)
     except Exception as e:
         log_server_error("review_counts", e)
         return
     with st.container(key="rev_bar"):
-        start_col, info_col = st.columns([1.3, 4.1], vertical_alignment="center")
+        start_col, info_col, bulk_col = st.columns([1.3, 2.4, 1.7], vertical_alignment="center")
         start_col.button("התחילי בדיקה", key="rev_start", on_click=review_screen.start, args=(flt,), type="primary",
                          width="stretch", disabled=counts["cells"] == 0,
                          help="עוברים תא-תא על כל מה שסומן לבדיקה, עם הטופס המקורי לצד הערך")
-        info_col.markdown(ui.quiet(f"<b>{counts['cells']}</b> תאים לבדיקה ב-<b>{counts['records']}</b> טפסים"),
-                          unsafe_allow_html=True)
+        info_col.markdown(ui.quiet(f"<b>{counts['cells']}</b> תאים לבדיקה ב-<b>{counts['records']}</b> טפסים · "
+                                   f"<b>{counts['safe']}</b> רשומות בטוחות לאישור"), unsafe_allow_html=True)
+        with bulk_col:
+            render_bulk_approve(flt, counts["safe"])
 
 
 def render_field_notes(fs: dict, key: str, he_flag) -> None:

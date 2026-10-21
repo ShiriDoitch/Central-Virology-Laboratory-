@@ -10,6 +10,7 @@ from .export import FIELD_KEYS
 # צבעי התא (src/service.cell_color): כתום = דגל, זהב = שתי קריאות מסכימות, ריק = לא נמצא ובלי דגל.
 # שלושתם דורשים עין אנושית (אותה סמנטיקה כמו ATTENTION ב-src/review.py); ירוק ומאושר ידנית = תקין.
 ATTENTION_COLORS = ("orange", "yellow", "empty")
+SAFE_COLORS = ("green", "confirmed")
 
 
 @dataclass(frozen=True)
@@ -26,6 +27,22 @@ class ReviewItem:
 def needs_review(state: dict) -> bool:
     """תא שדורש בדיקה: כתום, זהב או ריק, ושהמשתמשת לא אישרה אותו."""
     return not state.get("cell_confirmed") and state.get("color") in ATTENTION_COLORS
+
+
+def is_safe_cell(state: dict) -> bool:
+    """תא שאינו דורש עין אנושית: אושר ידנית, או ירוק **ובלי אף דגל**. ירוק אמור להיות בלי דגלים ממילא,
+    והבדיקה המפורשת היא חגורת בטיחות: תא שנושא דגל לא ייכנס לאישור קבוצתי גם אם הצבע השמור אומר ירוק."""
+    if state.get("cell_confirmed"):
+        return True
+    return state.get("color") == "green" and not state.get("flags")
+
+
+def is_safe_record(record: dict, fields: dict[str, dict]) -> bool:
+    """רשומה שאפשר לאשר באישור קבוצתי: אינה מאושרת כבר, יש לה מצב לכל שבעת השדות, וכל התאים בטוחים.
+    שדה חסר נחשב לא בטוח (עדיף לא לאשר מאשר לאשר על בסיס מצב שלא נקרא)."""
+    if record.get("status") == "approved":
+        return False
+    return all(key in fields and is_safe_cell(fields[key]) for key in FIELD_KEYS)
 
 
 def build_queue(records: list[dict], states: dict[int, dict[str, dict]]) -> list[ReviewItem]:
@@ -114,6 +131,7 @@ def duration_he(seconds: float) -> str:
 
 
 def queue_counts(records: list[dict], states: dict[int, dict[str, dict]]) -> dict[str, int]:
-    """מה שהכפתור מעל הטבלה מציג: כמה תאים דורשים בדיקה ובכמה טפסים."""
+    """מה שהכפתורים מעל הטבלה מציגים, במעבר אחד: כמה תאים דורשים בדיקה, בכמה טפסים, וכמה רשומות בטוחות לאישור."""
     items = build_queue(records, states)
-    return {"cells": len(items), "records": len({i.record_id for i in items})}
+    return {"cells": len(items), "records": len({i.record_id for i in items}),
+            "safe": sum(1 for r in records if is_safe_record(r, states.get(r["id"]) or {}))}
