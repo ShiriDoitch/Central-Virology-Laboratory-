@@ -322,6 +322,38 @@ code {font-family: 'IBM Plex Mono', monospace !important; direction: ltr; unicod
 .st-key-detail_suggest .stButton > button:hover {background: #DCE8EA;}
 
 /* ============================================================
+   8ב. בדיקה במבט אחד (review_screen.py): שורת הפתיחה מעל הטבלה, כרטיס התא, ולוח האיכות
+   ============================================================ */
+.st-key-rev_bar {background: var(--paper) !important; border: 1px solid var(--line) !important; border-radius: var(--radius) !important;
+      box-shadow: var(--shadow); padding: var(--sp-2) var(--sp-3) !important;}
+.st-key-rev_bar .stButton > button {height: 38px; min-height: 38px; white-space: nowrap;}
+.st-key-rv_card {background: var(--paper) !important; border: 1px solid var(--line) !important; border-top: 3px solid var(--accent) !important;
+      border-radius: var(--radius) !important; box-shadow: var(--shadow-lift); padding: var(--sp-4) var(--sp-5) var(--sp-5) !important;}
+.st-key-rv_actions {background: #FCFBF8 !important; border: 1px solid var(--line) !important; border-radius: var(--radius) !important;
+      padding: var(--sp-3) var(--sp-4) var(--sp-4) !important;}
+.st-key-rv_actions [data-baseweb="input"] {border: 1px solid var(--line-2); background: var(--paper) !important;}
+.st-key-rv_actions .stTextInput input {font-size: var(--fs-section); height: 2.6rem; background: var(--paper) !important;}
+.st-key-rv_actions [data-testid="stForm"] {border: none; padding: 0;}
+.st-key-rv_chips .stButton > button {min-height: 2rem; padding: 2px var(--sp-4); border-radius: var(--radius-pill);
+      background: var(--accent-soft); border-color: var(--accent-line); color: var(--accent-ink);}
+.st-key-rv_chips .stButton > button:hover {background: #DCE8EA;}
+.rv-field {display: flex; align-items: center; gap: var(--sp-3); margin: 0 0 var(--sp-2);}
+.rv-field .rv-name {font-size: var(--fs-section); font-weight: 700; color: var(--ink);}
+.rv-none {font-size: var(--fs-cap); color: var(--ink-3);}
+/* מסגרת האזור על העמוד המלא: גרפיקה, לא טקסט. המסגרת הכהה והטבעת הלבנה נראות גם על דיו וגם על נייר */
+.pg-wrap .pg-mark {position: absolute; border: 3px solid var(--orange-dot); border-radius: 4px;
+      background: rgba(176, 106, 30, 0.10); box-shadow: 0 0 0 2px rgba(255, 255, 255, 0.75);}
+/* מדדי סוף הבדיקה ולוח האיכות: מספר גדול מעל תווית שקטה */
+.rv-metrics {display: flex; flex-wrap: wrap; gap: var(--sp-2); margin: var(--sp-2) 0;}
+.rv-metrics > div {flex: 1 1 150px; background: var(--paper); border: 1px solid var(--line); border-radius: var(--radius);
+      padding: var(--sp-2) var(--sp-4) 9px;}
+.rv-metrics > div > span {display: block; font-size: var(--fs-cap); color: var(--ink-3);}
+.rv-metrics > div > b {font-size: 1.28rem; font-weight: 600; color: var(--ink); font-variant-numeric: tabular-nums;}
+.rv-metrics > div.bad {border-color: var(--orange-line); background: var(--orange-fill);}
+.rv-metrics > div.bad > span, .rv-metrics > div.bad > b {color: var(--orange-ink);}
+.rv-metrics > div.ok > b {color: var(--green-ink);}
+
+/* ============================================================
    9. מצבים ריקים והנחיות
    ============================================================ */
 .placeholder {display: flex; align-items: baseline; gap: var(--sp-2); padding: 11px var(--sp-4); margin-bottom: var(--sp-2); color: var(--ink-3);

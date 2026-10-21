@@ -4,7 +4,7 @@ import hashlib
 from dataclasses import dataclass, field
 from datetime import datetime, timedelta, timezone
 
-from . import db_export, page_store, repo, storage_config
+from . import db_export, guided_review, page_store, repo, storage_config
 from .confirm import field_crop_from_image, normalize_override, stored_field_fractions
 from .export import FIELD_KEYS, Cell, build_rows
 from .privacy import log_server_error
@@ -137,6 +137,11 @@ def save_override(conn, upload_id: int, page: int, okey: str, value: str | None,
     return len(recs)
 
 
+def record_value(record: dict, key: str) -> str | None:
+    """הערך הסופי של שדה ברשומה שנטענה (מרכזי יושב בטבלה נפרדת ולכן בשדה משלו)."""
+    return record["center"] if key == "center" else record[repo.FIELD_COLUMN[key]]
+
+
 def load_overrides(conn, upload_id: int) -> dict:
     """אישורי המשתמש השמורים, בצורה שהממשק משתמש בה: {(עמוד, שדה | "commitment#<שורה>"): ערך}."""
     out: dict = {}
@@ -145,7 +150,7 @@ def load_overrides(conn, upload_id: int) -> dict:
         for field, st in full["fields"].items():
             if st["cell_confirmed"]:
                 key = f"{COMMITMENT_PREFIX}{r['ordinal']}" if field == "commitment" else field
-                out[(r["page_no"], key)] = full["center"] if field == "center" else full[repo.FIELD_COLUMN[field]]
+                out[(r["page_no"], key)] = record_value(full, field)
     return out
 
 
@@ -291,7 +296,7 @@ def confirmed_value(conn, upload_id: int, page: int, okey: str) -> str | None:
         full = repo.get_record(conn, r["id"])
         if not full["fields"][field]["cell_confirmed"]:
             return None
-        values.add(full["center"] if field == "center" else full[repo.FIELD_COLUMN[field]])
+        values.add(record_value(full, field))
     return values.pop() if len(values) == 1 else None
 
 
@@ -324,6 +329,35 @@ def record_images(conn, record: dict) -> tuple[bytes | None, dict[str, bytes | N
             by_region[token] = field_crop_from_image(image, fr)
         crops[key] = by_region[token]
     return image, crops
+
+
+# ---------- בדיקה במבט אחד (תור הבדיקה) ----------
+
+def _rows_and_states(conn, flt: RecordFilter) -> tuple[list[dict], dict[int, dict[str, dict]]]:
+    """הרשומות שבסינון (בסדר המיון שלו) ומצבי השדות שלהן, בשתי שאילתות: הבסיס לתור הבדיקה ולאישור הקבוצתי."""
+    rows, _total = repo.search_records(conn, limit=None, light=True, **_search_args(flt))
+    return rows, repo.field_states_for(conn, [r["id"] for r in rows])
+
+
+def review_queue(conn, flt: RecordFilter) -> list[guided_review.ReviewItem]:
+    """תור הבדיקה של הסינון הפעיל: תא אחד לכל שדה כתום / זהב / ריק שלא אושר, בסדר הרשומות ואז סדר השדות."""
+    return guided_review.build_queue(*_rows_and_states(conn, flt))
+
+
+def review_counts(conn, flt: RecordFilter) -> dict[str, int]:
+    """המספרים שמעל הטבלה: כמה תאים לבדיקה ובכמה טפסים."""
+    return guided_review.queue_counts(*_rows_and_states(conn, flt))
+
+
+def review_cell_image(conn, record: dict, key: str) -> tuple[bytes | None, bytes | None, tuple | None]:
+    """לתא אחד במסך הבדיקה: (תמונת העמוד השמורה, חיתוך האזור של השדה, שברי האזור לסימון על העמוד).
+    אין תמונה שמורה (לא נשמרה, או נמחקה אחרי אישור העמוד): (None, None, None) והמסך מציג הודעה."""
+    image = page_store.read(record["upload_id"], record["page_no"])
+    if image is None:
+        return None, None, None
+    stored = (repo.get_page_regions(conn, record["upload_id"], record["page_no"]) or {}).get(key)
+    fractions = tuple(stored) if stored else None
+    return image, field_crop_from_image(image, fractions), fractions
 
 
 def delete_all_data(conn) -> dict:

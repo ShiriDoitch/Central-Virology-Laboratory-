@@ -419,16 +419,36 @@ def search_records(conn, *, search: str | None = None, statuses=None, senders=No
     return ([dict(r) for r in found] if light else _hydrate(conn, found)), total      # light: בלי שאילתת מרכזיים לכל שורה (ניווט)
 
 
+def _field_state(row) -> dict:
+    """שורת field_states כמילון לקוראים (אותו מבנה בכל מקום: get_record ו-field_states_for)."""
+    return {"machine_value": row["machine_value"], "color": row["color"], "flags": json.loads(row["flags_json"]),
+            "alternatives": json.loads(row["alternatives_json"]), "human_edited": bool(row["human_edited"]),
+            "cell_confirmed": bool(row["cell_confirmed"])}
+
+
 def get_record(conn, record_id: int) -> dict | None:
     row = conn.execute("SELECT * FROM records WHERE id=?", (record_id,)).fetchone()
     if row is None:
         return None
     d = _hydrate(conn, [row])[0]
-    d["fields"] = {r["field"]: {"machine_value": r["machine_value"], "color": r["color"], "flags": json.loads(r["flags_json"]),
-                                "alternatives": json.loads(r["alternatives_json"]), "human_edited": bool(r["human_edited"]),
-                                "cell_confirmed": bool(r["cell_confirmed"])}
-                   for r in conn.execute("SELECT * FROM field_states WHERE record_id=?", (record_id,))}
+    d["fields"] = {r["field"]: _field_state(r) for r in conn.execute("SELECT * FROM field_states WHERE record_id=?", (record_id,))}
     return d
+
+
+_ID_CHUNK = 400                     # כמה מזהים בשאילתה אחת (מתחת למגבלת הפרמטרים של SQLite)
+
+
+def field_states_for(conn, record_ids) -> dict[int, dict[str, dict]]:
+    """מצבי השדות של כמה רשומות יחד (תור הבדיקה והאישור הקבוצתי עוברים על כל הרשומות שבסינון, ולכן שאילתה
+    לכל רשומה הייתה יקרה). מחזיר {מזהה רשומה: {שדה: מצב}}, באותו מבנה של get_record()["fields"]."""
+    ids = [int(i) for i in record_ids]
+    out: dict[int, dict[str, dict]] = {}
+    for start in range(0, len(ids), _ID_CHUNK):
+        chunk = ids[start:start + _ID_CHUNK]
+        rows = conn.execute(f"SELECT * FROM field_states WHERE record_id IN ({','.join('?' * len(chunk))})", chunk)
+        for r in rows:
+            out.setdefault(r["record_id"], {})[r["field"]] = _field_state(r)
+    return out
 
 
 def find_record(conn, upload_id: int, page_no: int, ordinal: int) -> int | None:
@@ -456,3 +476,4 @@ def status_counts(conn, upload_id: int | None = None) -> dict[str, int]:
 
 def audit_entries(conn, record_id: int) -> list[dict]:
     return [dict(r) for r in conn.execute("SELECT * FROM audit_log WHERE record_id=? ORDER BY id", (record_id,))]
+

@@ -8,6 +8,7 @@ import pandas as pd
 import streamlit as st
 
 import evidence_view
+import review_screen
 from src import service
 from src import ui_theme as ui
 from src.confirm import flag_chips_html, md_text
@@ -232,6 +233,24 @@ def _revert(rid: int, key: str) -> None:
         st.session_state["rec_msg"] = ("success", "הערך הוחזר להצעת המערכת.")
 
 
+# ---------- בדיקה במבט אחד: פתיחת הבדיקה ----------
+
+def render_review_bar(conn, flt: service.RecordFilter) -> None:
+    """שורה אחת מעל הטבלה: התחלת בדיקה מונחית על הרשומות שבסינון הפעיל."""
+    try:
+        counts = service.review_counts(conn, flt)
+    except Exception as e:
+        log_server_error("review_counts", e)
+        return
+    with st.container(key="rev_bar"):
+        start_col, info_col = st.columns([1.3, 4.1], vertical_alignment="center")
+        start_col.button("התחילי בדיקה", key="rev_start", on_click=review_screen.start, args=(flt,), type="primary",
+                         width="stretch", disabled=counts["cells"] == 0,
+                         help="עוברים תא-תא על כל מה שסומן לבדיקה, עם הטופס המקורי לצד הערך")
+        info_col.markdown(ui.quiet(f"<b>{counts['cells']}</b> תאים לבדיקה ב-<b>{counts['records']}</b> טפסים"),
+                          unsafe_allow_html=True)
+
+
 def render_field_notes(fs: dict, key: str, he_flag) -> None:
     """דגלים וחלופות של שדה, מקופלים. נפתח מעצמו רק בשדה שסומן לבדיקה (כתום), כדי שהכרטיס יישאר שקט."""
     notes = [he_flag(f, key) for f in fs["flags"]]
@@ -379,6 +398,9 @@ def render(db, he_flag) -> None:
     msg = st.session_state.pop("rec_wipe_msg", None)
     if msg:
         getattr(st, msg[0])(msg[1])
+    if review_screen.active():            # בדיקה מונחית פעילה: היא תופסת את המסך (בלי טבלה ובלי מחיקת נתונים לידה)
+        review_screen.render(db, he_flag)
+        return
     render_skipped()
     _render_main(db, he_flag)
     render_data_management()
@@ -397,6 +419,7 @@ def _render_main(db, he_flag) -> None:
         search = render_top(counts)
         flt = read_filter(options, search)
     st.session_state["_rec_flt"] = flt                                  # לשימוש ה-callbacks (הבאה בתור) ולמבחנים
+    render_review_bar(conn, flt)
     size = st.session_state.get("rec_size", PAGE_SIZES[1])
     _rows, total = service.query(conn, flt, limit=1, offset=0)
     pages_n = max(1, -(-total // size))

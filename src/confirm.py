@@ -161,6 +161,10 @@ def normalize_override(key: str, text: str | None) -> str | None:
     return text
 
 
+# מה מותר להקליד בכל שדה (בדיוק מה ש-normalize_override מקבל). מוצג לצד שדה הקלט בכל מסך שבו מקלידים ערך.
+INPUT_HINTS = {"id": "ספרות בלבד", "commitment": "ספרות בלבד", "center": "ספרות; כמה ערכים מופרדים ב-;", "date": "dd.mm.yyyy"}
+
+
 def set_override(overrides: dict, page: int, key: str, value: str | None) -> None:
     """שומר את הערך שהמשתמש הקליד או בחר כערך סופי לתא בעמוד. ערך ריק מבטל את האישור. ערך לא תקין לשדה (למשל אותיות
     בת"ז): ValueError והאישור הקודם לא משתנה. key = שם שדה, או "commitment#<שורה>" להתחייבות (override_key)."""
@@ -187,3 +191,20 @@ def zoom_html(jpeg: bytes, zoom_pct: int, base_px: int = ZOOM_BASE_PX, box_heigh
     return (f'<div class="name-zoom" data-width="{width}" style="overflow:auto; max-height:{box_height_px}px; border:1px solid #ccc; '
             f'direction:rtl; background:#fff"><img alt="שורת פרטי המטופל" src="data:image/jpeg;base64,{src}" '
             f'style="width:{width}px; max-width:none; display:block"></div>')
+
+
+def region_zoom_html(jpeg: bytes, zoom_pct: int, fractions: tuple | list | None = None, base_px: int = 720,
+                     box_height_px: int = ZOOM_BOX_HEIGHT_PX) -> str:
+    """העמוד המלא בתוך מיכל נגלל, עם מסגרת מסומנת סביב האזור שממנו נקרא השדה (שברי x0,y0,x1,y1 של העמוד,
+    כפי שנשמרו לצד התמונה). בלי שברים: העמוד בלבד, בלי סימון. שום נתון מהטופס לא נכנס ל-HTML: רק מספרים."""
+    width = round(base_px * zoom_pct / 100)
+    src = base64.b64encode(jpeg).decode()
+    mark = ""
+    if fractions and len(tuple(fractions)) == 4:
+        x0, y0, x1, y1 = (min(1.0, max(0.0, float(v))) for v in fractions)
+        mark = (f'<div class="pg-mark" style="left:{x0 * 100:.2f}%; top:{y0 * 100:.2f}%; '
+                f'width:{max(x1 - x0, 0.0) * 100:.2f}%; height:{max(y1 - y0, 0.0) * 100:.2f}%"></div>')
+    return (f'<div class="name-zoom" data-width="{width}" style="overflow:auto; max-height:{box_height_px}px; border:1px solid #ccc; '
+            f'direction:rtl; background:#fff"><div class="pg-wrap" style="position:relative; width:{width}px">'
+            f'<img alt="העמוד המקורי עם סימון האזור של השדה" src="data:image/jpeg;base64,{src}" '
+            f'style="width:{width}px; max-width:none; display:block">{mark}</div></div>')

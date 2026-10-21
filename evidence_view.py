@@ -2,7 +2,7 @@
 אותו חיתוך באותה צורה: סרגל הגדלה, מסגרת נגללת, והעמוד המלא. הלוגיקה של החיתוך עצמו משותפת ב-src/confirm.py (review_crop)."""
 import streamlit as st
 
-from src.confirm import zoom_html
+from src.confirm import region_zoom_html, zoom_html
 
 CROP_CAPTION = "האזור שממנו נקרא השדה, מהעמוד הנקי. ההגדלה בסרגל משנה את גודל התמונה, וגוללים בתוך המסגרת."
 
@@ -27,3 +27,13 @@ def render_zoomable_page(image: bytes, zoom_key: str, caption: str = "העמוד
     zoom = st.slider("הגדלת העמוד", 100, 600, 100, 50, key=zoom_key, format="%d%%")
     st.markdown(zoom_html(image, zoom, base_px=720, box_height_px=520), unsafe_allow_html=True)
     st.caption(caption)
+
+
+PAGE_REGION_CAPTION = "העמוד המלא; המסגרת מסמנת את האזור שממנו נקרא השדה."
+
+
+def render_page_region(image: bytes, fractions: tuple | list | None, page: int, zoom_key: str) -> None:
+    """העמוד המלא עם מסגרת סביב האזור של השדה (מסך הבדיקה המונחית). בלי אזור שמור: העמוד בלי סימון."""
+    zoom = st.slider("הגדלת העמוד", 100, 600, 100, 50, key=zoom_key, format="%d%%")
+    st.markdown(region_zoom_html(image, zoom, fractions, box_height_px=520), unsafe_allow_html=True)
+    st.caption(f"עמוד {page} · " + (PAGE_REGION_CAPTION if fractions else "אין אזור שמור לשדה הזה, מוצג העמוד כולו."))

@@ -9,7 +9,7 @@ from pathlib import Path
 import pandas as pd
 import streamlit as st
 
-from src.confirm import FIELD_REGION, field_crop, flag_chips_html, md_code, md_text, name_suggestions, normalize_override, override_key, set_override, zoom_html
+from src.confirm import FIELD_REGION, INPUT_HINTS, field_crop, flag_chips_html, md_code, md_text, name_suggestions, normalize_override, override_key, set_override, zoom_html
 from src.export import COLUMNS, CONFIRMED, FIELD_KEYS, GREEN, ORANGE, YELLOW, _readings, build_rows, build_workbook, pass2_issues, skip_reason
 import evidence_view
 import records_screen
@@ -323,10 +323,6 @@ def _unapprove_row(record_id: int) -> None:
 
 
 STATUS_HE = {"pending": "ממתינה לבדיקה", "ready": "מוכנה לאישור", "approved": "אושרה"}
-
-
-INPUT_HINTS = {"id": 'ספרות בלבד', "commitment": "ספרות בלבד", "center": "ספרות; כמה ערכים מופרדים ב-;", "date": "dd.mm.yyyy"}
-
 
 
 
