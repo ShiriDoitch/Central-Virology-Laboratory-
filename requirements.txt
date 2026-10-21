@@ -3,7 +3,7 @@
 google-genai
 PyMuPDF>=1.24.3          # the module name "pymupdf" (not fitz) exists from 1.24.3
 Pillow
-opencv-python-headless
+opencv-python-headless   # headless: the non-headless build needs libGL.so.1, which the hosted Linux server has not got
 numpy                    # imported directly in src/barcode.py, src/orientation.py (also comes with opencv/pandas)
 pydantic
 pandas

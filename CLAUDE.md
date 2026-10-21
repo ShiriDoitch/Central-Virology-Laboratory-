@@ -26,7 +26,7 @@
 - Python 3.10+ (נבדק בפועל על 3.10.0: התקנה נקייה מ-requirements.txt והסוויטה המלאה עברו, 21.10.2026)
 - מודל: **Gemini Flash** דרך Google AI Studio (חבילת `google-genai`), פלט JSON מובנה. אפשר להוסיף Claude כהשוואה אחר כך. המודל מאחורי ממשק `extract(images) -> dict` כדי שאפשר להחליף.
 - `PyMuPDF` (fitz): המרת עמודי PDF לתמונות
-- `Pillow`, `opencv-python`: סיבוב לפי EXIF, יישור, בהירות
+- `Pillow`, `opencv-python-headless`: סיבוב לפי EXIF, יישור, בהירות (headless: בשרת Linux מופשט אין libGL.so.1)
 - `pydantic`: סכמה ואימות פלט המודל
 - `pandas`, `openpyxl`: אקסל
 - `streamlit`: ממשק (קודם פשוט, אחר כך עיצוב)

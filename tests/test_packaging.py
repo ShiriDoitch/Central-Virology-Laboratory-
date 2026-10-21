@@ -1,15 +1,19 @@
 """requirements.txt: הקובץ שעל פיו מתקינים על מחשב נקי (21.10.2026, מבדיקת התקנה בסביבה חדשה).
 1. ASCII בלבד: pip קורא את הקובץ בקידוד המקומי של המערכת (cp1255 בעברית), ולכן הערה בעברית
    מפילה את ההתקנה ב-UnicodeDecodeError. זה קרה בפועל בבדיקה.
-2. כל ספרייה שמיובאת ישירות בקוד מוצהרת בקובץ (גם כשהיא מגיעה כתלות של ספרייה אחרת)."""
+2. כל ספרייה שמיובאת ישירות בקוד מוצהרת בקובץ (גם כשהיא מגיעה כתלות של ספרייה אחרת).
+3. opencv בגרסת headless (21.10.2026, מהכשל בשרת המוארח): הבנייה הרגילה דורשת libGL.so.1,
+   שאינה קיימת בשרת Linux מופשט (Streamlit Community Cloud), ולכן "import cv2" נכשל שם ב-ImportError.
+   שם המודול שמיובא לא משתנה (cv2)."""
 import re
 from pathlib import Path
 
 REQ = Path("requirements.txt")
 # שם המודול שמיובא -> השם ב-requirements (בלי גרסה)
-DIRECT_IMPORTS = {"numpy": "numpy", "httpx": "httpx", "pymupdf": "pymupdf", "PIL": "pillow", "cv2": "opencv-python",
-                  "pydantic": "pydantic", "pandas": "pandas", "openpyxl": "openpyxl", "streamlit": "streamlit",
-                  "dotenv": "python-dotenv", "pytest": "pytest", "zxingcpp": "zxing-cpp", "google": "google-genai"}
+DIRECT_IMPORTS = {"numpy": "numpy", "httpx": "httpx", "pymupdf": "pymupdf", "PIL": "pillow",
+                  "cv2": "opencv-python-headless", "pydantic": "pydantic", "pandas": "pandas",
+                  "openpyxl": "openpyxl", "streamlit": "streamlit", "dotenv": "python-dotenv",
+                  "pytest": "pytest", "zxingcpp": "zxing-cpp", "google": "google-genai"}
 
 
 def declared() -> set[str]:
@@ -28,6 +32,13 @@ def test_requirements_is_ascii_so_pip_can_read_it_in_any_locale():
 def test_every_directly_imported_library_is_declared():
     missing = {mod: pkg for mod, pkg in DIRECT_IMPORTS.items() if pkg not in declared()}
     assert not missing
+
+
+def test_opencv_is_the_headless_build_so_a_server_without_libgl_can_import_cv2():
+    """כלל 3: הבנייה הרגילה (opencv-python) מפילה את השרת המוארח ב-ImportError: libGL.so.1."""
+    names = declared()
+    assert "opencv-python-headless" in names
+    assert "opencv-python" not in names
 
 
 def test_the_modules_in_the_map_really_are_imported_in_the_code():
