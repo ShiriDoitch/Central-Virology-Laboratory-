@@ -92,5 +92,5 @@ def test_page_level_error_code_and_clear_reason():
     from src.export import skip_reason
     from src import pipeline
     assert "גדולה מדי" in skip_reason({"pass1": {"ok": False, "error_code": "payload_too_large"}})
-    assert "העלי שוב" in skip_reason({"pass1": {"ok": False, "error_code": "page_timeout"}})
+    assert "יש להעלות שוב" in skip_reason({"pass1": {"ok": False, "error_code": "page_timeout"}})
     assert "פרטים במסוף" in skip_reason({"pass1": {"ok": False, "error": "x"}})

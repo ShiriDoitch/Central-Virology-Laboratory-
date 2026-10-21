@@ -22,7 +22,7 @@ FULL_PAGE_KEY = "rv_full_page"            # מתג "העמוד המלא": מפת
 INPUT_LABEL = "הערך הנכון"                # גם ה-aria-label שהמיקוד האוטומטי מחפש
 CODE_KEYS = ("id", "center", "commitment")
 NOT_FOUND = "לא נמצא"
-EMPTY_HINT = "התא ריק: הקלידי את מה שכתוב בטופס, או דלגי אם אין ערך בטופס."
+EMPTY_HINT = "התא ריק: יש להקליד את מה שכתוב בטופס, או לדלג אם אין ערך בטופס."
 
 
 # ---------- פתיחה וסגירה ----------
@@ -97,7 +97,7 @@ def _apply(item: guided_review.ReviewItem, text: str | None) -> None:
     try:
         service.edit_record_field(service.open_connection(), item.record_id, item.field, value)
     except service.RecordLocked:
-        st.session_state["rv_msg"] = ("error", "הרשומה מאושרת ולכן נעולה. בטלי את אישור הרשומה במסך הרשומות כדי לתקן.")
+        st.session_state["rv_msg"] = ("error", "הרשומה מאושרת ולכן נעולה. לתיקון יש לבטל את אישור הרשומה במסך הרשומות.")
         return
     except ValueError:
         st.session_state["rv_msg"] = ("error", f"הערך לא תקין ל{TITLES[item.field]}, לא נשמר{hint}.")
@@ -166,7 +166,7 @@ def _render_summary(sess: guided_review.ReviewSession) -> None:
     back, again = st.columns([1, 1])
     back.button("חזרה לרשומות", key="rv_exit", on_click=_exit, type="primary", width="stretch")
     if not sess.done:
-        again.button("המשיכי בבדיקה", key="rv_resume", on_click=_reopen, width="stretch")
+        again.button("המשך הבדיקה", key="rv_resume", on_click=_reopen, width="stretch")
 
 
 def _render_progress(sess: guided_review.ReviewSession, item) -> None:
@@ -241,7 +241,7 @@ def _render_actions(sess: guided_review.ReviewSession, record: dict, item, state
         st.form_submit_button("אישור · Enter", type="primary", width="stretch", on_click=_submit, args=(item,))
     st.caption("Enter מאשר את מה שבשדה: ערך זהה למה שהמערכת קראה נרשם כאישור, ערך שונה נרשם כתיקון.")
     skip_col, back_col, end_col = st.columns(3)
-    skip_col.button("דלג", key="rv_skip", on_click=_skip, width="stretch", help="התא חוזר בסוף הבדיקה")
+    skip_col.button("דילוג", key="rv_skip", on_click=_skip, width="stretch", help="התא חוזר בסוף הבדיקה")
     back_col.button("חזרה", key="rv_back", on_click=_back, width="stretch", disabled=sess.pos == 0, help="התא הקודם")
     end_col.button("סיום", key="rv_end", on_click=_close, width="stretch")
 

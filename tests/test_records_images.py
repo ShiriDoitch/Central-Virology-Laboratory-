@@ -6,6 +6,7 @@ import pytest
 from streamlit.testing.v1 import AppTest
 
 from src import page_store, repo, service
+from tests.test_repo import confirm_flagged_cells
 from tests.test_page_images import make_pdf, page_result
 
 APP = str(Path(__file__).resolve().parent.parent / "app.py")
@@ -59,6 +60,8 @@ def test_card_without_image_shows_message_and_editing_still_works(seeded):
     at.text_input(key=f"rec_in_{rid}_sender").set_value("מכבי").run()
     next(b for b in at.button if b.key == f"rec_save_{rid}").click().run()
     assert repo.get_record(conn, rid)["sender"] == "מכבי"
+    confirm_flagged_cells(conn, rid)                                       # אחרת כפתור האישור נעול
+    at.run()
     next(b for b in at.button if b.key == f"rec_appr_{rid}").click().run()
     assert repo.get_record(conn, rid)["status"] == "approved"
 
@@ -75,6 +78,7 @@ def test_card_survives_a_corrupt_image_file(seeded):
 
 def test_cancelling_approval_after_the_image_was_deleted_shows_the_missing_message(seeded):
     conn, uid, rid = seeded
+    confirm_flagged_cells(conn, rid)                                           # אחרת כפתור האישור נעול
     at = card(rid)
     next(b for b in at.button if b.key == f"rec_appr_{rid}").click().run()      # העמוד אושר במלואו: התמונה נמחקת
     assert not page_store.exists(uid, 1)

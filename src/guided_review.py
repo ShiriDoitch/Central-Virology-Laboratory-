@@ -45,6 +45,13 @@ def is_safe_record(record: dict, fields: dict[str, dict]) -> bool:
     return all(key in fields and is_safe_cell(fields[key]) for key in FIELD_KEYS)
 
 
+def blocks_approval(state: dict) -> bool:
+    """תא שמונע אישור של הרשומה: **ערך** שסומן לבדיקה (כתום) ושלא אושר ידנית. תא ריק אינו מונע, גם אם
+    הוא מסומן: שדה יכול באמת לא להופיע בטופס. תא צהוב אינו מונע: שתי קריאות עצמאיות שמסכימות, והאישור
+    עצמו הוא המבט. (צבע "orange" במסד נקבע רק כשאין אישור, ולכן הוא כבר אומר "לא אושר".)"""
+    return bool(state.get("color") == "orange" and state.get("machine_value"))
+
+
 def build_queue(records: list[dict], states: dict[int, dict[str, dict]]) -> list[ReviewItem]:
     """תור הבדיקה: records = שורות הרשומות בסדר שהסינון החזיר (ברירת המחדל במסך היא סדר העמודים),
     states = {מזהה רשומה: {שדה: מצב}}. תא אחד לכל שדה שדורש בדיקה, בסדר רשומה ואז סדר שבעת השדות.

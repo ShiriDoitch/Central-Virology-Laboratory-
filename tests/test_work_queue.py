@@ -7,7 +7,7 @@ import pytest
 from streamlit.testing.v1 import AppTest
 
 from src import repo, service
-from tests.test_repo import green_fields
+from tests.test_repo import confirm_flagged_cells, green_fields
 
 APP = str(Path(__file__).resolve().parent.parent / "app.py")
 
@@ -231,6 +231,7 @@ def test_approve_keeps_record_open_even_though_queue_hides_it(db):
     rid = ids["pending"][0]
     at = screen()
     at.session_state["rec_open"] = rid
+    confirm_flagged_cells(db, rid)                                                   # אחרת כפתור האישור נעול
     at.run()
     next(b for b in at.button if b.key == f"rec_appr_{rid}").click().run()
     assert repo.get_record(db, rid)["status"] == "approved"

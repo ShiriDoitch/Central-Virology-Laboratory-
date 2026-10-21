@@ -15,6 +15,7 @@ import evidence_view
 import records_screen
 from src import service
 from src import ui_theme as ui
+from src import ui_text
 from src.intake import pdf_to_images, rotate_jpeg
 from src.schema import PageExtraction
 from src.privacy import GENERIC_ERROR_HE, is_production, log_server_error
@@ -36,7 +37,7 @@ UI_TONE = {**ui.STATE_INK, "ink": ui.INK}
 TABLE_H = 520                                        # גובה מרבי של הטבלה ברוחב מלא (גלילה פנימית); כרטיס הבדיקה נפתח מתחתיה
 # סינון מהיר: מפתח -> תווית. "תקין" = שורה בלי אף שדה לבדיקה (ירוק או מאושר בלבד); הלוגיקה ב-src/review.py
 FILTERS = {"all": "הכול", "green": "תקין", "orange": "לבדיקה", "yellow": "זהב", "empty": "ריק"}     # הצבע בא מרקע הכפתור, בלי אייקונים
-FOCUS_LABEL = "מצב פוקוס לבורנטית (הצג חריגים בלבד)"
+FOCUS_LABEL = "מצב פוקוס (הצגת חריגים בלבד)"
 ROW_H = 40                                           # גובה שורה בטבלה: מרווח נוח לקריאה
 # רוחב מינימלי לעמודה בפיקסלים. הרשת מחלקת את הרוחב הפנוי באופן יחסי, ולכן הסכום (כ-720) קטן מרוחב הטבלה גם במסך מחשב נייד:
 # הרשת מצוירת משמאל לימין, וגלילה אופקית הייתה מסתירה דווקא את העמודות הימניות (עמוד, שם פרטי).
@@ -49,11 +50,12 @@ NAME_KEYS = ("first_name", "last_name")
 NOT_READ_TEXT = "לא נקרא, יש להקליד"
 YELLOW_TEXT = "נקרא בכתב יד בשתי קריאות עצמאיות שמסכימות, מספיק מבט לאישור"
 
-# שמות הדגלים בעברית (תצוגה בלבד; הקודים נשארים בקוד ובאקסל)
+# הסיבה לבדיקה, בעברית (תצוגה בלבד; הקודים עצמם נשארים בקוד, באקסל וביומן).
+# ניסוח אחיד: מה לא בטוח, ומה לעשות ("יש לבדוק מול התמונה"). בלי קודים פנימיים ובלי "מודל".
 FLAG_HE = {
     "handwritten": "כתב יד",
-    "low_confidence": "ביטחון נמוך של המודל",
-    "conflict": "סתירה בין קריאות",
+    "low_confidence": "קריאה לא ברורה, יש לבדוק מול התמונה",
+    "conflict": "שתי קריאות שונות, יש לבדוק מול התמונה",
     "invalid_format": "פורמט לא מזוהה",
     "invalid_date": "תאריך לא חוקי",
     "year_out_of_range": "שנה מחוץ לטווח",
@@ -63,15 +65,15 @@ FLAG_HE = {
     "non_digit": "מספר עם תווים שאינם ספרות",
     "no_commitment": "לא נמצא מספר התחייבות",
     "no_center_label": "מספר בלי תווית מרכזי",
-    "center_mismatch": "מועמדי מרכזי שונים בין המעברים",
-    "id_single_source": "ת\"ז נקראה במעבר אחד בלבד",
+    "center_mismatch": "שתי קריאות שונות של המרכזי, יש לבדוק מול התמונה",
+    "id_single_source": "ת\"ז נקראה בקריאה אחת בלבד",
     "id_length": "אורך ת\"ז לא תקין (צריך 5 עד 9 ספרות), הערך לא שונה",
     "id_checksum_failed": "ספרת הביקורת של הת\"ז לא תקינה (הערך לא שונה)",
-    "date_outside_window": "תאריך קבלה מחוץ לחלון (דגימה עד 14 יום אחרי השליחה/הדגימה, לא בעתיד, לא אחרי התוקף)",
-    "date_single_source": "תאריך נקרא בקריאה אחת בלבד (בלי קריאה שנייה מחיתוך אזור הקבלה)",
+    "date_outside_window": "תאריך קבלה מחוץ לחלון הסביר (עד 14 יום מהדגימה, לא בעתיד)",
+    "date_single_source": "תאריך נקרא בקריאה אחת בלבד",
     "id_not_israeli_format": "פורמט לא ישראלי (אותיות או יותר מ-9 ספרות), ספרת ביקורת לא נבדקה",
-    "region_not_ok": "האזור שנחתך לא תקין",
-    "handwritten_unconfirmed": "כתב יד בקריאה אחת, לא מאושר",
+    "region_not_ok": "האזור בטופס לא נחתך כראוי, יש לבדוק מול התמונה",
+    "handwritten_unconfirmed": "כתב יד בקריאה אחת, יש לבדוק מול התמונה",
     "father_name": "שם האב (לא שם המטופל)",
     "name_label_unknown": "תווית השם לא מוכרת",
     "missing_required_field": "שדה חובה חסר",
@@ -80,14 +82,14 @@ FLAG_HE = {
     "fuzzy_match": "התאמה מקורבת לגורם מוכר",
     "name_label_missing": "שם מודפס בלי תווית מטופל (הצעה בלבד)",
     "date_kind_unclear": "סוג התאריך לא ברור",
-    "commitment_mismatch": "קריאות שונות של מספר ההתחייבות",
-    "commitment_single_source": "מספר התחייבות נקרא במעבר אחד בלבד",
+    "commitment_mismatch": "שתי קריאות שונות של מספר ההתחייבות, יש לבדוק מול התמונה",
+    "commitment_single_source": "מספר התחייבות נקרא בקריאה אחת בלבד",
     "weak_label": "תווית חלשה (\"מספר\")",
-    "model_says_not_commitment_form": "המודל סימן: לא טופס התחייבות",
+    "model_says_not_commitment_form": "העמוד לא זוהה כטופס התחייבות",
     "rotation_unresolved": "הסיבוב לא נפתר",
-    "center_from_barcode_only": "המרכזי נקרא מהברקוד בלבד (המודל לא מצא), לבדיקה",
-    "center_barcode_extra": "הברקוד מכיל מרכזיים נוספים שהמודל לא קרא, לבדיקה",
-    "not_recognized_as_form": "המודל לא זיהה טופס התחייבות, אבל יש סימני טופס: כל השדות לבדיקה",
+    "center_from_barcode_only": "המרכזי נקרא מהברקוד בלבד, יש לבדוק מול התמונה",
+    "center_barcode_extra": "בברקוד יש מרכזיים נוספים שלא נקראו, יש לבדוק מול התמונה",
+    "not_recognized_as_form": "העמוד לא זוהה כטופס, אבל יש בו סימני טופס: כל השדות לבדיקה",
 }
 
 
@@ -115,6 +117,22 @@ ui.inject()
 
 
 # ---------- טעינה ועיבוד ----------
+
+def page_progress(bar):
+    """המאזין של שורת הסטטוס (src/status.py) בזמן העיבוד: פס ההתקדמות מתמלא לפי עמודים שהסתיימו, והטקסט
+    אומר באיזה עמוד אנחנו ומה נעשה בו. אין אחוזים מומצאים בתוך עמוד, ואירוע שאינו שלב (ניסיון חוזר,
+    המתנה למכסה, מעבר למודל אחר) לא משנה את הטקסט: מוני ניסיונות לא מוצגים למשתמשת, הם בלוג השרת."""
+    seen = {"stage": ui_text.DEFAULT_STAGE}
+
+    def on_status(page: int, total: int, text: str) -> None:
+        label = ui_text.stage_label(text)
+        if label:
+            seen["stage"] = label
+        done = (page - 1) / total if total else 0.0
+        bar.progress(min(1.0, max(0.0, done)), text=ui_text.progress_text(page, total, seen["stage"]))
+
+    return on_status
+
 
 def load_sample() -> tuple[list[dict], dict[int, bytes]]:
     """טוען את הריצה השמורה של חלק 1 (בלי API) ואת תמונות העמודים הנקיים (עם הסיבוב שהוחל).
@@ -326,6 +344,12 @@ STATUS_HE = {"pending": "ממתינה לבדיקה", "ready": "מוכנה לאי
 
 
 
+def pending_fields(er) -> list[str]:
+    """שמות השדות שמונעים אישור של השורה: ערך שסומן לבדיקה (כתום) ושלא אושר. תא **ריק אינו מונע** (שדה
+    יכול באמת לא להופיע בטופס), וגם תא צהוב לא (שתי קריאות עצמאיות שמסכימות: מבט מספיק)."""
+    return [TITLES[k] for k, cell in er.cells.items() if cell.orange and cell.value]
+
+
 def cell_status(cell) -> tuple[str, str]:
     """מחלקת ה-CSS ותווית הסטטוס של תא (אותו סדר עדיפויות כמו בטבלה ובאקסל)."""
     if cell.confirmed:
@@ -366,8 +390,6 @@ def render_evidence(page_res: dict, er, key: str, image: bytes | None) -> None:
     if cell.alternatives and key not in NAME_KEYS:
         label = "מועמדים שנמצאו (התא ריק)" if not cell.value else "חלופות"
         st.markdown(f"**{label}:** " + " | ".join(md_text(a) for a in cell.alternatives))
-    if cell.hints:
-        st.caption("רמזים: " + ", ".join(cell.hints))
     evidence_view.render_crop_and_page(crop, image, er.page, zoom_key=f"zoom_{er.page}_{FIELD_REGION.get(key)}")      # רכיב משותף עם כרטיס הרשומה
     r1 = PageExtraction.model_validate(page_res["pass1"])
     p1, p2 = _readings(key, r1, page_res.get("pass2"))
@@ -383,7 +405,7 @@ def render_confirmation(page_res: dict, er, key: str, locked: bool = False) -> N
     overrides = st.session_state.setdefault("name_overrides", {})
     st.markdown("<div class='col-label'>אישור הערך</div>", unsafe_allow_html=True)
     if locked or st.session_state.get(f"locked_{page}"):
-        st.warning("השורה אושרה ולכן נעולה לשינוי. כדי לתקן, בטלי קודם את אישור השורה (למעלה).")
+        st.warning("השורה אושרה ולכן נעולה לשינוי. לתיקון יש לבטל קודם את אישור השורה (למעלה).")
         locked = True
     if cell.confirmed:
         st.success(f"אושר על ידי המשתמש: {md_text(cell.value)}")
@@ -395,7 +417,7 @@ def render_confirmation(page_res: dict, er, key: str, locked: bool = False) -> N
         st.info(f"ערך של המערכת: {md_text(cell.value)}")
     suggestions = name_suggestions(cell, key)
     if suggestions:
-        st.markdown("**הצעות (לחצי כדי לאשר):**")
+        st.markdown("**הצעות (לחיצה מאשרת):**")
         if key == "id" and "id_checksum_failed" in cell.flags and not cell.confirmed:
             st.caption("אחרי הערך שנקרא: החלפת ספרה אחת בזוגות מבולבלים שעוברת את ספרת הביקורת. אין תיקון אוטומטי.")
         with st.container(horizontal=True, gap="small", key="detail_suggest"):
@@ -407,17 +429,22 @@ def render_confirmation(page_res: dict, er, key: str, locked: bool = False) -> N
     else:
         st.caption("אין הצעות לשדה הזה. אפשר להקליד ערך.")
     txt_key = f"txt_{page}_{okey}"
+    hint = f" ({INPUT_HINTS[key]})" if key in INPUT_HINTS else ""
     st.session_state.setdefault(txt_key, overrides.get((page, okey), ""))
-    st.text_input("או הקלדה ידנית" + (f" ({INPUT_HINTS[key]})" if key in INPUT_HINTS else ""), key=txt_key, disabled=locked)
-    if st.session_state.get(f"err_{page}_{okey}"):
-        st.error("הערך לא תקין לשדה הזה, לא נשמר" + (f" ({INPUT_HINTS[key]})" if key in INPUT_HINTS else ""))
-    ok_slot, clear_slot = st.columns([3, 2]) if cell.confirmed else (st.container(), None)
     already = already_confirmed(page, okey, st.session_state.get(txt_key))
-    ok_slot.button("הערך אושר" if already else "אשרי את הערך שהוקלד", key=f"ok_{page}_{okey}", on_click=_confirm_typed, args=(page, okey),
-                   type="secondary" if already else "primary", width="stretch", disabled=locked or already,
-                   help="הערך שהוקלד זהה לערך השמור. שני את הטקסט כדי לאשר ערך אחר." if already else None)
-    if clear_slot is not None:                           # פעולה משנית: כפתור שקט לצד הכפתור הראשי
-        clear_slot.button("בטלי אישור", key=f"clr_{page}_{okey}", on_click=_clear, args=(page, okey), width="stretch", disabled=locked)
+    # טופס, כדי ש-Enter בשדה יאשר את מה שהוקלד (והכפתור נשאר). הכפתור אינו מושבת כשהערך זהה לערך השמור,
+    # אחרת לא היה אפשר לאשר ערך חדש: הטקסט מגיע לשרת רק עם שליחת הטופס. אישור חוזר של אותו ערך לא כותב
+    # כלום (_confirm_typed יוצא מיד), והתווית אומרת שהערך כבר אושר.
+    with st.form(key=f"typed_{page}_{okey}", border=False, clear_on_submit=False):
+        st.text_input("הקלדה ידנית" + hint, key=txt_key, disabled=locked)
+        if st.session_state.get(f"err_{page}_{okey}"):
+            st.error("הערך לא תקין לשדה הזה, לא נשמר" + hint)
+        st.form_submit_button("הערך אושר" if already else "אישור הערך שהוקלד", key=f"ok_{page}_{okey}",
+                              on_click=_confirm_typed, args=(page, okey), type="secondary" if already else "primary",
+                              width="stretch", disabled=locked,
+                              help="הערך שהוקלד זהה לערך השמור. שינוי הטקסט ואישור יחליפו אותו." if already else "Enter בשדה מאשר")
+    if cell.confirmed:                                   # פעולה משנית: כפתור שקט מתחת לטופס
+        st.button("ביטול אישור", key=f"clr_{page}_{okey}", on_click=_clear, args=(page, okey), width="stretch", disabled=locked)
 
 
 def render_detail(page_res: dict, er, key: str, image: bytes | None, row_i: int, n_rows: int, nxt, hidden: bool) -> None:
@@ -430,7 +457,7 @@ def render_detail(page_res: dict, er, key: str, image: bytes | None, row_i: int,
         f"{ui.badge(cls, label)}</div>",
         unsafe_allow_html=True,
     )
-    nav_next.button("לבדיקה הבאה ←", key="next_cell", on_click=_select, args=(nxt,), disabled=nxt is None, width="stretch",
+    nav_next.button("בדיקה הבאה ←", key="next_cell", on_click=_select, args=(nxt,), disabled=nxt is None, width="stretch",
                     help="התא הבא שדורש בדיקה (כתום, צהוב או ריק)")
     nav_close.button("סגירה", key="close_detail", on_click=_select, args=(None,), width="stretch")
     info = None
@@ -443,11 +470,17 @@ def render_detail(page_res: dict, er, key: str, image: bytes | None, row_i: int,
         st_col, btn_col = st.columns([4, 1.6], vertical_alignment="center")
         st_col.markdown(f"<div class='rec-head'><span class='rec-meta'>סטטוס השורה</span>"
                         f"{ui.badge(ui.STATUS_STATE[info['status']], STATUS_HE[info['status']])}</div>", unsafe_allow_html=True)
+        pending = pending_fields(er)
         if info["status"] == "approved":
-            btn_col.button("בטלי אישור שורה", key=f"unappr_{info['id']}", on_click=_unapprove_row, args=(info["id"],), width="stretch")
+            btn_col.button("ביטול אישור השורה", key=f"unappr_{info['id']}", on_click=_unapprove_row, args=(info["id"],), width="stretch")
         else:
-            btn_col.button("אשרי שורה", key=f"appr_{info['id']}", on_click=_approve_row, args=(info["id"],), type="primary", width="stretch",
-                           help="מסמן את כל השורה כבדוקה. שורה מאושרת נעולה ולא נדרסת בעיבוד חוזר.")
+            with btn_col:
+                st.button("אישור שורה", key=f"appr_{info['id']}", on_click=_approve_row, args=(info["id"],), type="primary",
+                          width="stretch", disabled=bool(pending),
+                          help=("יש לאשר או לתקן קודם: " + ", ".join(pending)) if pending
+                          else "מסמן את כל השורה כבדוקה. שורה מאושרת נעולה ולא נדרסת בעיבוד חוזר.")
+                if pending:
+                    st.caption(ui_text.pending_hint(len(pending)))
     st.markdown("<div class='panel-rule'></div>", unsafe_allow_html=True)
     ev_col, act_col = st.columns([1.45, 1], gap="large")       # RTL: הראיות מימין, האישור משמאל
     with ev_col:
@@ -503,13 +536,12 @@ with st.container(border=True, key="action_card"):         # כרטיס פעול
     cols = st.columns(widths, vertical_alignment="center", gap="small")
     up_col, run_col, dl_col = (cols[0], cols[1], cols[3]) if SHOW_SAMPLE else (cols[0], cols[1], cols[2])
     with up_col:
-        upload = st.file_uploader("העלאת טופס (PDF או תמונה)", type=["pdf", "png", "jpg", "jpeg"], label_visibility="collapsed")
-    run_clicked = run_col.button("עבד", type="primary", disabled=upload is None, width="stretch")
-    sample_clicked = cols[2].button("טען דוגמה מחלק 1", width="stretch") if SHOW_SAMPLE else False
+        upload = st.file_uploader("העלאת קובץ (PDF או תמונה)", type=["pdf", "png", "jpg", "jpeg"], label_visibility="collapsed")
+    run_clicked = run_col.button("חילוץ נתונים", type="primary", disabled=upload is None, width="stretch")
+    sample_clicked = cols[2].button("טעינת דוגמה מחלק 1", width="stretch") if SHOW_SAMPLE else False
     download_slot = dl_col.empty()
-    download_slot.button("הורד אקסל", disabled=True, width="stretch", key="dl_disabled", help="זמין אחרי שיש תוצאות")
+    download_slot.button("הורדת אקסל", disabled=True, width="stretch", key="dl_disabled", help="זמין אחרי שיש תוצאות")
 
-progress_slot = st.empty()
 if sample_clicked:
     try:
         st.session_state["pages"], st.session_state["images"] = load_sample()
@@ -538,17 +570,17 @@ if run_clicked and upload is not None:
             st.session_state["_goto_records"] = existing["id"]
             st.rerun()
         else:
-            bar = progress_slot.progress(0.0, text="מתחיל")
+            bar = st.progress(0.0, text=ui_text.PROGRESS_START)
             store = service.Persister(db(), upload.name, data)
             try:
                 st.session_state["pages"], st.session_state["images"], st.session_state["field_crops"] = process_upload(
-                    upload.name, data, bar, store=store)
+                    upload.name, data, bar, store=store, on_status=page_progress(bar))
                 st.session_state["is_sample"] = False
                 st.session_state["upload_id"] = store.upload_id
                 st.session_state["name_overrides"] = service.load_overrides(db(), store.upload_id) if store.upload_id else {}
                 if store.incomplete_pages:
                     st.warning("העיבוד של עמודים " + ", ".join(map(str, store.incomplete_pages)) + " חרג מהזמן המוקצב לעמוד ולא הושלם. "
-                               "שאר העמודים עובדו. כדי להמשיך, העלי שוב את אותו קובץ.")
+                               "שאר העמודים עובדו. להמשך יש להעלות שוב את אותו קובץ.")
                 if store.errors:
                     st.warning(f"השמירה למסד הנתונים נכשלה ב-{store.errors} עמודים (פרטים במסוף השרת). התוצאות מוצגות אך לא נשמרו במלואן.")
             except UploadRejected as e:                      # הודעה שכתבנו בעצמנו (למשל יותר מדי עמודים), בלי טקסט מהקובץ
@@ -560,9 +592,10 @@ if run_clicked and upload is not None:
 pages = st.session_state.get("pages")
 images = st.session_state.get("images", {})
 if not pages:
-    hint = ("העלי קובץ ולחצי \"עבד\", או לחצי \"טען דוגמה מחלק 1\"." if SHOW_SAMPLE
-            else "העלי קובץ PDF או תמונה ולחצי עבד")
-    st.markdown(f"<div class='empty-state'><b>אין עדיין תוצאות</b><p>{hint}</p></div>", unsafe_allow_html=True)
+    hint = ("העלאת קובץ ולחיצה על \"חילוץ נתונים\", או \"טעינת דוגמה מחלק 1\"" if SHOW_SAMPLE
+            else "העלאת קובץ PDF או תמונה ולחיצה על \"חילוץ נתונים\"")
+    # שורה אחת שקטה (placeholder) ולא כרטיס גבוה: במסך הזה הכרטיס הגבוה דחק את הטבלה למטה
+    st.markdown(f"<div class='placeholder'><b>אין עדיין תוצאות</b><span>{hint}</span></div>", unsafe_allow_html=True)
     st.stop()
 
 overrides = st.session_state.setdefault("name_overrides", {})
@@ -596,24 +629,14 @@ if st.session_state.get("upload_id") and not st.session_state.get("is_sample"):
     except Exception as e:
         log_server_error("status_counts", e)
 issues = pass2_issues(pages)
-if issues["fallback"]:
-    st.warning("מעבר 2 נקרא במודל הגיבוי החלש (המודל החזק לא זמין או נכשל) בעמודים: "
-               + ", ".join(map(str, issues["fallback"])) + ". הקריאות בעמודים האלה פחות אמינות, מומלץ לבדוק ידנית.")
-if issues["claude"]:
-    st.warning("מעבר 2 נקרא ב-Claude (גיבוי אחרון: כל מפתחות Gemini נכשלו) בעמודים: "
-               + ", ".join(map(str, issues["claude"])) + ". מומלץ לבדוק ידנית.")
-if issues["claude_pass1"]:
-    st.warning("הקריאה הראשונה נעשתה ב-Claude (גיבוי אחרון, Gemini לא זמין) בעמודים: "
-               + ", ".join(map(str, issues["claude_pass1"])) + ".")
-if issues["quota"]:
-    st.warning("מעבר 2 דולג בגלל מכסה יומית שנגמרה בעמודים: " + ", ".join(map(str, issues["quota"]))
-               + ". יש רק קריאה אחת של העמוד בשדות האלה.")
-if issues["failed"]:
-    st.warning("מעבר 2 נכשל בעמודים: " + ", ".join(map(str, issues["failed"])) + ".")
+# אזהרה מוצגת רק כשהיא נכונה לעמוד שבאמת נקרא כך (issues ריק = אין אזהרה בכלל).
+# בלשון המשתמשת: מה זה אומר עליה, בלי שמות של מודלים ובלי "גיבוי".
+for text in ui_text.read_notices(issues):
+    st.warning(text)
 wb, _summary = build_workbook(pages, overrides)
 buf = io.BytesIO()
 wb.save(buf)
-download_slot.download_button("הורד אקסל", buf.getvalue(), file_name="commitments.xlsx", key="dl_xlsx", width="stretch",
+download_slot.download_button("הורדת אקסל", buf.getvalue(), file_name="commitments.xlsx", key="dl_xlsx", width="stretch",
                               mime="application/vnd.openxmlformats-officedocument.spreadsheetml.sheet", type="primary")
 
 # ---------- סרגל אחד: מסננים מהירים, מונה, מצב פוקוס ----------
@@ -681,9 +704,9 @@ if selected:
 else:
     first = next_attention_cell(colors, list(view.index), None) if not view.empty else None
     tip, go = st.columns([5, 1.2], vertical_alignment="center")
-    tip.markdown("<div class='placeholder'><b>בחרי תא בטבלה</b>"
+    tip.markdown("<div class='placeholder'><b>בחירת תא בטבלה</b>"
                  "<span>כרטיס הבדיקה ייפתח כאן: האזור הסרוק, הדגלים, ההצעות וכפתורי האישור.</span></div>", unsafe_allow_html=True)
-    go.button("התחילי מהחריג הראשון", key="first_cell", on_click=_select, args=(first,), disabled=first is None, type="primary", width="stretch")
+    go.button("התחלה מהחריג הראשון", key="first_cell", on_click=_select, args=(first,), disabled=first is None, type="primary", width="stretch")
 
 with st.container(key="secondary"):                         # אזורים משניים: סגורים כברירת מחדל
     with st.expander("פירוט לפי שדה", expanded=False):

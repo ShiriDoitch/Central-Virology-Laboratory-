@@ -404,8 +404,11 @@ def test_pass2_issues_lists_fallback_quota_and_failed_pages():
 
 
 def test_app_shows_pass2_warning_and_receipt_crop_for_date():
+    """המסך מציג אזהרה לעמודים שנקראו אחרת, בנוסח של src/ui_text.py (בלי שמות מודלים; ראו tests/test_ui_polish.py)."""
+    from src import ui_text
     src = open("app.py", encoding="utf-8").read()
-    assert "pass2_issues(pages)" in src and "st.warning" in src and "מודל הגיבוי החלש" in src
+    assert "pass2_issues(pages)" in src and "ui_text.read_notices(issues)" in src and "st.warning" in src
+    assert ui_text.read_notices({"fallback": [2]}) == ["עמוד 2 נקרא בשיטה פחות מדויקת, מומלץ לבדוק אותו ידנית"]
     from src.confirm import FIELD_REGION
     assert FIELD_REGION["date"] == "receipt"
 

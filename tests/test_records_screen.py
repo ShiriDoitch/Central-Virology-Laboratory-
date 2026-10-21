@@ -6,6 +6,7 @@ import pytest
 from streamlit.testing.v1 import AppTest
 
 from src import repo, service
+from tests.test_repo import confirm_flagged_cells
 
 APP = str(Path(__file__).resolve().parent.parent / "app.py")
 RUN = Path("outputs/clean_part1_v4b")
@@ -99,6 +100,8 @@ def test_detail_edit_save_and_approve_roundtrip(seeded):
     next(b for b in at.button if b.key == f"rec_save_{rid}").click().run()
     rec = repo.get_record(conn, rid)
     assert rec["sender"] == "מכבי" and rec["fields"]["sender"]["human_edited"]
+    confirm_flagged_cells(conn, rid)                           # "אישור רשומה" נעול כל עוד יש תא כתום עם ערך
+    at.run()
     next(b for b in at.button if b.key == f"rec_appr_{rid}").click().run()
     assert repo.get_record(conn, rid)["status"] == "approved"
     # רשומה מאושרת נעולה: אין שדות קלט בכלל (גם לא מושתקים), הערכים מוצגים כטקסט, ואין כפתור שמירה

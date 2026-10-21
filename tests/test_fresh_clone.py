@@ -33,11 +33,11 @@ def test_the_records_screen_boots_on_an_empty_database(fresh_cwd):
 
 
 def test_sample_button_says_the_sample_is_missing_instead_of_doing_nothing(fresh_cwd):
-    """הכפתור "טען דוגמה מחלק 1" היה "מצליח" בשקט עם 0 עמודים (glob על תיקייה חסרה מחזיר רשימה ריקה),
+    """הכפתור "טעינת דוגמה מחלק 1" היה "מצליח" בשקט עם 0 עמודים (glob על תיקייה חסרה מחזיר רשימה ריקה),
     והמסך נשאר ריק בלי הסבר. עכשיו מוצגת שגיאה שאומרת שהדוגמה אינה בעותק הזה."""
     at = AppTest.from_file(APP, default_timeout=120)
     at.run()
-    next(b for b in at.button if b.label.startswith("טען")).click().run()
+    next(b for b in at.button if "דוגמה" in b.label).click().run()
     assert not at.exception
     assert any("הדוגמה" in e.value for e in at.error), [e.value for e in at.error]
     assert not at.session_state.get("pages")

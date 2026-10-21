@@ -16,7 +16,7 @@ from dotenv import load_dotenv
 load_dotenv()
 
 DEV, PRODUCTION = "dev", "production"
-GENERIC_ERROR_HE = "העיבוד נכשל, נסי שוב או פני לתמיכה"
+GENERIC_ERROR_HE = "העיבוד נכשל, אפשר לנסות שוב או לפנות לתמיכה"
 _log = logging.getLogger("commitments")
 if not _log.handlers:
     _handler = logging.StreamHandler(sys.stderr)      # מסוף השרת בלבד: לא מגיע לדפדפן

@@ -25,6 +25,17 @@ def green_fields(**over):
     return fields(**base)
 
 
+def confirm_flagged_cells(conn, record_id: int) -> list[str]:
+    """מאשר את כל התאים הכתומים שיש בהם ערך, כדי שכפתור "אישור רשומה" / "אישור שורה" לא יהיה נעול
+    (records_screen.pending_fields, app.pending_fields). מחזיר את השדות שאושרו."""
+    done = []
+    for field, state in (repo.get_record(conn, record_id)["fields"] or {}).items():
+        if state["color"] == "orange" and state["machine_value"]:
+            repo.edit_field(conn, record_id, field, state["machine_value"])
+            done.append(field)
+    return done
+
+
 def test_schema_tables_and_foreign_keys(conn):
     names = {r[0] for r in conn.execute("SELECT name FROM sqlite_master WHERE type='table'")}
     assert {"uploads", "records", "record_centers", "field_states", "audit_log"} <= names

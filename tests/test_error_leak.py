@@ -73,4 +73,4 @@ def test_failed_page_is_logged_with_the_real_error_but_result_holds_only_the_typ
 
 def test_page_limit_message_is_ours_and_safe_to_show():
     assert issubclass(upload.UploadRejected, ValueError)
-    assert GENERIC_ERROR_HE == "העיבוד נכשל, נסי שוב או פני לתמיכה"
+    assert GENERIC_ERROR_HE == "העיבוד נכשל, אפשר לנסות שוב או לפנות לתמיכה"

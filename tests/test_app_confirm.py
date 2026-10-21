@@ -23,7 +23,7 @@ def row_of(page: int) -> int:
 def loaded_app(page: int = 1, column: str = "שם פרטי"):
     at = AppTest.from_file(APP, default_timeout=120)
     at.run()
-    next(b for b in at.button if b.label.startswith("טען")).click().run()
+    next(b for b in at.button if "דוגמה" in b.label).click().run()
     at.session_state["selected_cell"] = (row_of(page), column)
     at.run()
     assert not at.exception
@@ -54,8 +54,9 @@ def test_suggestion_exists_only_where_two_readings_agree_and_clicking_saves_it()
 
 
 def test_typed_value_is_saved_and_can_be_cleared():
+    """ההקלדה יושבת בטופס: Enter (או הכפתור) שולח אותו, ולכן הערך נקבע ונשלח באותה ריצה."""
     at = loaded_app(1)
-    at.text_input(key="txt_1_first_name").set_value("  ישראל ").run()
+    at.text_input(key="txt_1_first_name").set_value("  ישראל ")
     button(at, "ok_1_first_name").click().run()
     assert at.session_state["name_overrides"] == {(1, "first_name"): "ישראל"}
     button(at, "clr_1_first_name").click().run()
@@ -89,14 +90,14 @@ def test_center_cell_shows_candidates_as_buttons_and_clicking_confirms_all_field
 
 def test_id_typed_value_is_validated_and_saved_and_sender_has_no_crop_but_can_be_typed():
     at = loaded_app(5, 'ת"ז')
-    at.text_input(key="txt_5_id").set_value("12ab").run()
+    at.text_input(key="txt_5_id").set_value("12ab")
     button(at, "ok_5_id").click().run()
     assert at.session_state["name_overrides"] == {} and any("לא תקין" in e.value for e in at.error)
-    at.text_input(key="txt_5_id").set_value(" 123 456-789 ").run()
+    at.text_input(key="txt_5_id").set_value(" 123 456-789 ")
     button(at, "ok_5_id").click().run()
     assert at.session_state["name_overrides"] == {(5, "id"): "123456789"}
     at2 = loaded_app(5, "גורם שולח")
     assert any("אין חיתוך" in c.value for c in at2.caption)
-    at2.text_input(key="txt_5_sender").set_value("מכבי").run()
+    at2.text_input(key="txt_5_sender").set_value("מכבי")
     button(at2, "ok_5_sender").click().run()
     assert at2.session_state["name_overrides"] == {(5, "sender"): "מכבי"}

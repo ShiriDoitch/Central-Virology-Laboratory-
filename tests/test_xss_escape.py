@@ -40,7 +40,7 @@ def test_zoom_html_contains_only_base64_and_numbers():
 def test_app_renders_hostile_name_as_literal_text_not_a_tag():
     at = AppTest.from_file(APP, default_timeout=120)
     at.run()
-    next(b for b in at.button if b.label.startswith("טען")).click().run()
+    next(b for b in at.button if "דוגמה" in b.label).click().run()
     at.session_state["name_overrides"] = {(1, "first_name"): PAYLOAD}      # שם חופשי שהוקלד / שנקרא מהטופס
     at.session_state["selected_cell"] = (0, "שם פרטי")
     at.run()

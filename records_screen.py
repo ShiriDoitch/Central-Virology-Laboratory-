@@ -9,7 +9,7 @@ import streamlit as st
 
 import evidence_view
 import review_screen
-from src import service
+from src import guided_review, service, ui_text
 from src import ui_theme as ui
 from src.confirm import flag_chips_html, md_text
 from src.export import COLUMNS, FIELD_KEYS, skip_reason
@@ -137,9 +137,9 @@ def _do(action, *args) -> bool:
         action(*args)
         return True
     except service.RecordLocked:
-        st.session_state["rec_msg"] = ("error", "הרשומה מאושרת ולכן נעולה. בטלי אישור כדי לתקן.")
+        st.session_state["rec_msg"] = ("error", "הרשומה מאושרת ולכן נעולה. לתיקון יש לבטל את האישור.")
     except service.StaleVersion:
-        st.session_state["rec_msg"] = ("error", "הרשומה השתנתה מאז שנטענה. הנתונים רועננו, נסי שוב.")
+        st.session_state["rec_msg"] = ("error", "הרשומה השתנתה מאז שנטענה. הנתונים רועננו, יש לנסות שוב.")
     except ValueError:
         st.session_state["rec_msg"] = ("error", "הערך לא תקין לשדה הזה, לא נשמר.")
     except Exception as e:
@@ -252,14 +252,14 @@ def _bulk_approve(flt: service.RecordFilter) -> None:
 
 def render_bulk_approve(flt: service.RecordFilter, safe: int) -> None:
     """אישור קבוצתי: קודם המספר, ואז תיבת סימון וכפתור. רשומה שיש בה תא לבדיקה לא נכללת לעולם."""
-    with st.popover(f"אשרי את כל הרשומות הבטוחות  {safe}", disabled=safe == 0):
+    with st.popover(f"אישור כל הרשומות הבטוחות  {safe}", disabled=safe == 0):
         st.markdown(ui.quiet(f"<b>{safe}</b> רשומות שבהן כל שבעת השדות ירוקים בלי דגל או אושרו על ידך. "
                              "רשומה שיש בה תא לבדיקה (כתום, זהב או ריק) אינה נכללת, וגם לא רשומה שכבר אושרה."),
                     unsafe_allow_html=True)
-        ok = st.checkbox("ראיתי את המספר ואני מאשרת", key="rec_bulk_ok")
-        st.button("אשרי את הרשומות", key="rec_bulk_go", on_click=_bulk_approve, args=(flt,), type="primary",
+        ok = st.checkbox("המספר נבדק ואפשר לאשר", key="rec_bulk_ok")
+        st.button("אישור הרשומות", key="rec_bulk_go", on_click=_bulk_approve, args=(flt,), type="primary",
                   disabled=not ok, width="stretch")
-        st.caption("כל אישור ניתן לביטול ברשומה עצמה (\"בטלי אישור\").")
+        st.caption("כל אישור ניתן לביטול ברשומה עצמה (\"ביטול אישור\").")
 
 
 def render_review_bar(conn, flt: service.RecordFilter) -> None:
@@ -271,7 +271,7 @@ def render_review_bar(conn, flt: service.RecordFilter) -> None:
         return
     with st.container(key="rev_bar"):
         start_col, info_col, bulk_col = st.columns([1.3, 2.4, 1.7], vertical_alignment="center")
-        start_col.button("התחילי בדיקה", key="rev_start", on_click=review_screen.start, args=(flt,), type="primary",
+        start_col.button("התחלת בדיקה", key="rev_start", on_click=review_screen.start, args=(flt,), type="primary",
                          width="stretch", disabled=counts["cells"] == 0,
                          help="עוברים תא-תא על כל מה שסומן לבדיקה, עם הטופס המקורי לצד הערך")
         info_col.markdown(ui.quiet(f"<b>{counts['cells']}</b> תאים לבדיקה ב-<b>{counts['records']}</b> טפסים · "
@@ -304,12 +304,18 @@ def render_quality_panel(conn) -> None:
         st.caption("נמדד מכל מה ששמור במסד: \"ירוק\" = המערכת קראה ערך ולא סימנה אותו לבדיקה. ירוק שתוקן ידנית "
                    "הוא המקרה החמור, כי שם המערכת הייתה בטוחה וטעתה, ולכן הוא מוצג בנפרד.")
         if bad:
-            st.error(f"{q['green_edited']} תאים שהמערכת שמרה כירוקים תוקנו ידנית. כדאי להסתכל בהם: "
+            st.error(f"{q['green_edited']} תאים שהמערכת שמרה כירוקים תוקנו ידנית. כדאי לבדוק אותם: "
                      "ייתכן שצריך לסמן את השדה הזה לבדיקה גם בפעם הבאה.")
             for c in bad:
                 label = f"רשומה {int(c['record_id'])} · עמוד {int(c['page_no'])} · {TITLES.get(c['field'], c['field'])}"
-                st.button(f"פתחי {label}", key=f"rec_gw_{c['record_id']}_{c['field']}", on_click=_open_record,
+                st.button(f"פתיחת {label}", key=f"rec_gw_{c['record_id']}_{c['field']}", on_click=_open_record,
                           args=(int(c["record_id"]),))
+
+
+def pending_fields(rec: dict) -> list[str]:
+    """שמות השדות שמונעים אישור של הרשומה: ערך שסומן לבדיקה (כתום) ושלא אושר. תא **ריק אינו מונע** (שדה
+    יכול באמת לא להופיע בטופס), וגם תא צהוב לא (שתי קריאות עצמאיות שמסכימות: מבט מספיק)."""
+    return [TITLES[k] for k, fs in (rec.get("fields") or {}).items() if guided_review.blocks_approval(fs)]
 
 
 def render_field_notes(fs: dict, key: str, he_flag) -> None:
@@ -345,9 +351,16 @@ def render_detail(conn, rid: int, he_flag) -> None:
         with st.container(key="rec_actions"):          # סרגל פעולות אחד: אישור (ראשי), ניווט בתור, סגירה
             appr, prev_b, next_b, close_b = st.columns(4, vertical_alignment="center")
             if locked:
-                appr.button("בטלי אישור", key=f"rec_unappr_{rid}", on_click=_unapprove, args=(rid,), width="stretch")
+                appr.button("ביטול אישור", key=f"rec_unappr_{rid}", on_click=_unapprove, args=(rid,), width="stretch")
             else:
-                appr.button("אשרי רשומה", key=f"rec_appr_{rid}", on_click=_approve, args=(rid,), type="primary", width="stretch")
+                pending = pending_fields(rec)
+                with appr:
+                    st.button("אישור רשומה", key=f"rec_appr_{rid}", on_click=_approve, args=(rid,), type="primary",
+                              width="stretch", disabled=bool(pending),
+                              help=("יש לאשר או לתקן קודם: " + ", ".join(pending)) if pending
+                              else "מסמן את הרשומה כבדוקה. רשומה מאושרת נעולה ולא נדרסת בעיבוד חוזר.")
+                    if pending:
+                        st.caption(ui_text.pending_hint(len(pending)))
             prev_b.button("← הממתינה הקודמת", key=f"rec_prev_{rid}", on_click=_open_prev, args=(rid,), width="stretch",
                           help="הרשומה הממתינה הקודמת בסדר המיון והסינון הנוכחיים")
             next_b.button("הממתינה הבאה →", key=f"rec_next_{rid}", on_click=_open_next, args=(rid,), width="stretch",
@@ -383,10 +396,10 @@ def render_detail(conn, rid: int, he_flag) -> None:
                         with st.expander("האזור בטופס"):
                             evidence_view.render_crop_and_page(crops[key], None, rec["page_no"], zoom_key=f"rec_zoom_{rid}_{key}")
                     if fs["cell_confirmed"] and not locked:
-                        st.button("החזירי להצעת המערכת", key=f"rec_rv_{rid}_{key}", on_click=_revert, args=(rid, key))
+                        st.button("החזרה להצעת המערכת", key=f"rec_rv_{rid}_{key}", on_click=_revert, args=(rid, key))
         if not locked:
             current = {k: rec[COLUMN_OF[k]] for k in FIELD_KEYS}
-            st.button("שמרי תיקונים", key=f"rec_save_{rid}", on_click=_save_edits, args=(rid, rec["version"], current), type="primary")
+            st.button("שמירת תיקונים", key=f"rec_save_{rid}", on_click=_save_edits, args=(rid, rec["version"], current), type="primary")
         with st.expander("יומן שינויים"):
             if rec["audit"]:
                 st.dataframe(pd.DataFrame(rec["audit"])[["at", "field", "action", "old", "new"]], hide_index=True, width="stretch")
@@ -397,7 +410,7 @@ def render_detail(conn, rid: int, he_flag) -> None:
 def render_export(conn, flt: service.RecordFilter, total: int) -> None:
     """ייצוא כל הרשומות שבסינון, מקובץ בתפריט אחד (Excel / CSV / JSON)."""
     with st.popover("ייצוא · כל הרשומות בסינון", disabled=total == 0):
-        st.markdown(ui.quiet(f"<b>{total}</b> רשומות מתאימות לסינון הפעיל. בחרי פורמט:"), unsafe_allow_html=True)
+        st.markdown(ui.quiet(f"<b>{total}</b> רשומות מתאימות לסינון הפעיל. בחירת פורמט:"), unsafe_allow_html=True)
         for fmt, label in (("xlsx", "Excel"), ("csv", "CSV"), ("json", "JSON")):
             try:
                 data, mime, name = service.export_records(conn, flt, fmt)
@@ -417,7 +430,7 @@ def _wipe_all() -> None:
         counts = service.delete_all_data(service.open_connection())
     except Exception as e:
         log_server_error("delete_all_data", e)
-        st.session_state["rec_wipe_msg"] = ("error", "המחיקה נכשלה (פרטים במסוף השרת). לא נמחק הכול, נסי שוב.")
+        st.session_state["rec_wipe_msg"] = ("error", "המחיקה נכשלה (פרטים במסוף השרת). לא נמחק הכול, יש לנסות שוב.")
         return
     for key in WIPE_SESSION_KEYS:
         st.session_state.pop(key, None)
@@ -433,8 +446,8 @@ def render_data_management() -> None:
     with st.expander("ניהול נתונים", expanded=False):
         st.warning("המחיקה סופית ואינה ניתנת לשחזור. נמחקים כל הרשומות, יומן השינויים, ההעלאות וכל תמונות העמודים השמורות. "
                    "קבצים שכבר הורדת (Excel / CSV / JSON) לא מושפעים.")
-        confirmed = st.checkbox("אני מבינה שהמחיקה סופית", key="rec_wipe_ok")
-        st.button("מחק את כל הנתונים", key="rec_wipe_all", on_click=_wipe_all, disabled=not confirmed)
+        confirmed = st.checkbox("אישור: המחיקה סופית ואינה ניתנת לשחזור", key="rec_wipe_ok")
+        st.button("מחיקת כל הנתונים", key="rec_wipe_all", on_click=_wipe_all, disabled=not confirmed)
 
 
 def skipped_pages(pages: list[dict] | None = None) -> list[tuple[int, str]]:
@@ -473,7 +486,7 @@ def _render_main(db, he_flag) -> None:
     options = service.filter_options(conn)
     counts = options["counts"]
     if not any(counts.values()):
-        st.markdown("<div class='empty-state'><b>אין עדיין רשומות</b><p>עבדי קובץ במסך \"עיבוד\" והרשומות יישמרו כאן.</p></div>",
+        st.markdown("<div class='empty-state'><b>אין עדיין רשומות</b><p>עיבוד קובץ במסך \"עיבוד\" ישמור את הרשומות כאן.</p></div>",
                     unsafe_allow_html=True)
         return
     with st.container(key="rec_top"):
@@ -527,4 +540,4 @@ def _render_main(db, he_flag) -> None:
     if selected_id:
         render_detail(conn, selected_id, he_flag)
     else:
-        st.caption("בחרי שורה בטבלה כדי לתקן או לאשר אותה.")
+        st.caption("בחירת שורה בטבלה פותחת אותה לתיקון ולאישור.")

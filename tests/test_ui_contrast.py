@@ -92,3 +92,29 @@ def test_no_rule_dims_text_with_opacity():
     """opacity על טקסט מערבב אותו עם הרקע ומוריד את היחס (opacity: .8 על ספירת הגלולה ירד ל-3.85 עד 4.12)."""
     dimmed = [sel for sel, body in rules() if re.search(r"(?<!-)\bopacity:\s*(0|\.\d|0\.\d)", body)]
     assert dimmed == []
+
+
+GENERIC_BUTTON = re.compile(r"\.st(Download)?Button\s*>\s*button(:[a-z-]+)*\Z")
+NOT_PART = re.compile(r":not\([^)]*\)")        # ההחרגה עצמה מזכירה "primary", ולכן מוסרת לפני בדיקת הבורר
+
+
+def test_no_rule_for_all_buttons_can_paint_a_primary_button():
+    """כלל שחל על "כל כפתור" וקובע צבע טקסט חייב להחריג את הכפתור הראשי.
+
+    מהכשל שתוקן ב-21.10.2026: בגרסת Streamlit הזאת אין יותר תכונת kind על הכפתור אלא data-testid בלבד,
+    ולכן .stButton > button (0,1,1) גובר על [data-testid="stBaseButton-primary"] (0,1,0) והטקסט הכהה של
+    כפתור משני נצבע על הטורקיז הכהה של הכפתור הראשי, גם במצב מושבת."""
+    unguarded = [part.strip() for sel, body in rules() if "color:" in body
+                 for part in sel.split(",") if GENERIC_BUTTON.fullmatch(part.strip())]
+    assert unguarded == [], unguarded
+
+
+def test_disabled_primary_button_keeps_white_bold_text():
+    """המצב המושבת גלוי בממשק (כפתור "אישור שורה" נעול עד שאין בשורה שדה לבדיקה, "הורדת אקסל" לפני תוצאות),
+    ולכן הוא נבדק בפירוש: לבן מודגש על הטורקיז המעומעם, ובלי opacity שמערבב את הטקסט ברקע."""
+    bodies = [body for sel, body in rules() if ":disabled" in sel and "color:" in body
+              and "primary" in NOT_PART.sub("", sel)]
+    assert bodies, "חסר כלל צבע לכפתור ראשי מושבת"
+    for body in bodies:
+        assert "var(--on-accent)" in body and "font-weight: 700" in body and "opacity: 1" in body
+    assert contrast(TOKENS["on-accent"], TOKENS["accent-muted"]) >= AA

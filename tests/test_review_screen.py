@@ -72,7 +72,7 @@ def test_the_bar_starts_a_review_and_shows_the_first_cell(db):
     assert len(at.session_state["rv_session"].items) == 2                # העמוד הירוק לא נכנס
     body = texts(at)
     assert "בדיקה במבט אחד" in body and "טופס <b>1</b> מתוך 1" in body and "נשארו 2 תאים" in body
-    assert "סתירה בין קריאות" in body                                    # הדגל בעברית
+    assert "שתי קריאות שונות, יש לבדוק מול התמונה" in body               # הסיבה לבדיקה, בעברית
     assert at.text_input(key="rv_in_1_id").value == "11223344"           # מה שהמערכת קראה, כהצעה
     assert [b.key for b in at.button if b.key in ("rv_skip", "rv_back", "rv_end")] == ["rv_skip", "rv_back", "rv_end"]
 
@@ -155,7 +155,7 @@ def test_an_empty_input_asks_for_a_value_and_writes_nothing(db):
     assert at.text_input(key="rv_in_1_id").value == ""                   # תא ריק נשאר ריק: בלי ניחוש בשדה
     submit(at)
     assert repo.get_record(db, rid)["national_id"] is None
-    assert any("דלגי" in w.value for w in at.warning)
+    assert any("לדלג" in w.value for w in at.warning)
     assert current(at).field == "id"
 
 

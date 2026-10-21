@@ -111,8 +111,8 @@ CSS = """
 html, body, [data-testid="stAppViewContainer"], [data-testid="stSidebar"], .main, .block-container {direction: rtl; text-align: right;}
 html, body, .stApp, button, input, textarea, [data-testid="stMarkdownContainer"] {font-family: 'Heebo', sans-serif;}
 .stApp {background: var(--canvas);}
-.block-container {max-width: 1560px; padding: var(--sp-4) var(--sp-6) var(--sp-6);}
-[data-testid="stVerticalBlock"] {gap: var(--sp-3);}
+.block-container {max-width: 1560px; padding: var(--sp-2) var(--sp-6) var(--sp-5);}
+[data-testid="stVerticalBlock"] {gap: var(--sp-2);}
 [data-testid="stHeading"], [data-testid="stHeading"] *, h1, h2, h3, h4, h5,
 [data-testid="stCaptionContainer"], [data-testid="stCaptionContainer"] *,
 [data-testid="stMarkdownContainer"], [data-testid="stMarkdownContainer"] p {direction: rtl; text-align: right;}
@@ -127,7 +127,7 @@ code {font-family: 'IBM Plex Mono', monospace !important; direction: ltr; unicod
    3. טיפוגרפיה של הממשק: כותרת הדף, כותרת מקטע, שורה שקטה
    ============================================================ */
 .lab-header {display: flex; align-items: baseline; gap: var(--sp-3); flex-wrap: wrap; border-right: 3px solid var(--accent);
-      padding: 0 var(--sp-3) 0 0; margin: 0 0 var(--sp-2);}
+      padding: 0 var(--sp-3) 0 0; margin: 0 0 var(--sp-1);}
 .lab-header .title {font-size: var(--fs-page); font-weight: 700; color: var(--ink); line-height: var(--lh-tight);}
 .lab-header .org {font-size: var(--fs-label); font-weight: 500; color: var(--accent);}
 .lab-header .hint {font-size: var(--fs-cap); color: var(--ink-3); margin-inline-start: auto;}
@@ -182,26 +182,44 @@ code {font-family: 'IBM Plex Mono', monospace !important; direction: ltr; unicod
 .stButton > button [data-testid="stMarkdownContainer"], .stDownloadButton > button [data-testid="stMarkdownContainer"],
 .stButton > button [data-testid="stMarkdownContainer"] p, .stDownloadButton > button [data-testid="stMarkdownContainer"] p,
 .stButton > button p, .stDownloadButton > button p {color: inherit !important; font-weight: inherit !important;}
-.stButton > button, .stDownloadButton > button {border-radius: var(--radius-sm); font-weight: 500; border: 1px solid var(--line-2);
-      background: var(--paper); color: var(--ink); transition: border-color .15s, background .15s;}
-.stButton > button:hover, .stDownloadButton > button:hover {border-color: var(--accent); color: var(--accent);}
-/* כפתור ראשי ("עבד", "הורד אקסל", "אשרי..."): טקסט לבן ומודגש בכל המצבים. הבורר של data-testid
-   נשמר לגרסה של Streamlit שלא תעביר את kind ל-DOM. opacity: 1 כדי שהיחס שנמדד יהיה היחס שרואים. */
+/* כפתור משני: טקסט כהה על נייר. **כל כלל שחל על "כל כפתור" מחריג את הכפתור הראשי** (:not), כי אחרת
+   הוא גובר עליו: ראו ההסבר בכלל הראשי למטה. ההחרגה נבדקת ב-tests/test_ui_contrast.py. */
+.stButton > button:not([data-testid*="primary"]):not([kind="primary"]),
+.stDownloadButton > button:not([data-testid*="primary"]):not([kind="primary"]) {border-radius: var(--radius-sm); font-weight: 500;
+      border: 1px solid var(--line-2); background: var(--paper); color: var(--ink); transition: border-color .15s, background .15s;}
+.stButton > button:not([data-testid*="primary"]):not([kind="primary"]):hover,
+.stDownloadButton > button:not([data-testid*="primary"]):not([kind="primary"]):hover {border-color: var(--accent); color: var(--accent);}
+.stButton > button, .stDownloadButton > button {border-radius: var(--radius-sm); transition: border-color .15s, background .15s;}
+/* כפתור ראשי ("חילוץ נתונים", "הורדת אקסל", "אישור..."): טקסט לבן ומודגש בכל המצבים.
+   מהכשל שתוקן ב-21.10.2026: בגרסת Streamlit הזאת אין יותר תכונת kind על הכפתור אלא data-testid בלבד
+   ("stBaseButton-primary", ובטופס "stBaseButton-primaryFormSubmit"), ולכן כל הבוררים עם [kind="primary"]
+   לא תפסו, והבורר [data-testid=...] לבדו (0,1,0) הפסיד ל-.stButton > button (0,1,1): הטקסט הכהה של כפתור
+   משני נצבע על הטורקיז הכהה (2.26:1, ובמעבר עכבר 1.74:1). לכן כאן גם בורר עם .stButton (0,2,1) שגובר
+   בכל גרסה, גם הבוררים הישנים (לגרסה שתחזיר את kind), וגם ההחרגה בכלל הכללי למעלה.
+   opacity: 1 כדי שהיחס שנמדד יהיה היחס שרואים. */
 .stButton > button[kind="primary"], .stDownloadButton > button[kind="primary"],
 .stButton > button[kind="primary"]:focus, .stDownloadButton > button[kind="primary"]:focus,
 .stButton > button[kind="primary"]:focus-visible, .stDownloadButton > button[kind="primary"]:focus-visible,
 .stButton > button[kind="primary"]:active, .stDownloadButton > button[kind="primary"]:active,
+.stButton > button[data-testid*="primary"], .stDownloadButton > button[data-testid*="primary"],
+.stButton > button[data-testid*="primary"]:focus, .stDownloadButton > button[data-testid*="primary"]:focus,
+.stButton > button[data-testid*="primary"]:focus-visible, .stDownloadButton > button[data-testid*="primary"]:focus-visible,
+.stButton > button[data-testid*="primary"]:active, .stDownloadButton > button[data-testid*="primary"]:active,
 [data-testid="stBaseButton-primary"], [data-testid="stBaseButton-primaryFormSubmit"] {background: var(--accent);
       border-color: var(--accent); color: var(--on-accent) !important; font-weight: 700 !important; opacity: 1;}
 .stButton > button[kind="primary"]:hover, .stDownloadButton > button[kind="primary"]:hover,
+.stButton > button[data-testid*="primary"]:hover, .stDownloadButton > button[data-testid*="primary"]:hover,
 [data-testid="stBaseButton-primary"]:hover, [data-testid="stBaseButton-primaryFormSubmit"]:hover {background: var(--accent-hover);
       border-color: var(--accent-hover); color: var(--on-accent) !important;}
 /* מיקוד מהמקלדת: טבעת מסגרת מחוץ לכפתור, כדי שתיראה גם על כפתור ראשי כהה (8.97:1 מול --canvas) */
 .stButton > button:focus-visible, .stDownloadButton > button:focus-visible {outline: 3px solid var(--accent-ink); outline-offset: 2px;}
-/* מושבת: כפתור משני = טקסט כהה על רקע בהיר (4.79:1); כפתור ראשי = לבן מודגש על טורקיז מעומעם (4.99:1) */
-.stButton > button:disabled, .stDownloadButton > button:disabled {background: var(--wash); color: var(--ink-disabled);
-      border-color: var(--line); opacity: 1;}
+/* מושבת: כפתור משני = טקסט כהה על רקע בהיר (4.79:1); כפתור ראשי = לבן מודגש על טורקיז מעומעם (4.99:1).
+   המצב הזה גלוי בממשק: "אישור שורה" נעול כל עוד נשאר בשורה שדה לבדיקה, ו"הורדת אקסל" לפני שיש תוצאות. */
+.stButton > button:not([data-testid*="primary"]):not([kind="primary"]):disabled,
+.stDownloadButton > button:not([data-testid*="primary"]):not([kind="primary"]):disabled {background: var(--wash);
+      color: var(--ink-disabled); border-color: var(--line); opacity: 1;}
 .stButton > button[kind="primary"]:disabled, .stDownloadButton > button[kind="primary"]:disabled,
+.stButton > button[data-testid*="primary"]:disabled, .stDownloadButton > button[data-testid*="primary"]:disabled,
 [data-testid="stBaseButton-primary"]:disabled, [data-testid="stBaseButton-primaryFormSubmit"]:disabled {background: var(--accent-muted);
       border-color: var(--accent-muted); color: var(--on-accent) !important; font-weight: 700 !important; opacity: 1;}
 [data-baseweb="input"], [data-baseweb="select"] > div {border-radius: var(--radius-sm);}
@@ -212,7 +230,7 @@ code {font-family: 'IBM Plex Mono', monospace !important; direction: ltr; unicod
 [data-testid="stFileUploaderDropzone"] {background: var(--wash); border: 1px dashed var(--line-2); border-radius: var(--radius-sm);}
 [data-testid="stFileUploaderDropzoneInstructions"] > div > span, [data-testid="stFileUploaderDropzoneInstructions"] small,
 [data-testid="stFileUploaderDropzoneInstructions"] svg {display: none;}
-[data-testid="stFileUploaderDropzoneInstructions"] > div::before {content: "גררי לכאן קובץ PDF או תמונה (עד 25MB)"; font-size: 14px; color: var(--ink-2);}
+[data-testid="stFileUploaderDropzoneInstructions"] > div::before {content: "גרירת קובץ PDF או תמונה לכאן (עד 25MB)"; font-size: 14px; color: var(--ink-2);}
 [data-testid="stFileUploaderDropzone"] button, [data-testid="stFileUploaderDropzone"] button * {font-size: 0 !important;}
 [data-testid="stFileUploaderDropzone"] button::after {content: "בחירת קובץ"; font-size: 13px !important;}
 [data-testid="stAlert"] {border-radius: var(--radius-sm);}
