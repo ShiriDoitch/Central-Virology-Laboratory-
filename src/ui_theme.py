@@ -3,7 +3,12 @@
 
 תצוגה בלבד. אין כאן שום כלל חילוץ או החלטה: צבעי המצב (ירוק / כתום / צהוב / אושר ידנית / ריק) הם הסמנטיקה של
 src/export.py, וכאן נקבע רק הגוון שבו הם מוצגים, כך שכל טקסט יעמוד ביחס ניגודיות של 4.5:1 לפחות מול הרקע שלו.
-כל צבע אחר בממשק נייטרלי: צבע = מצב של שדה, ולא קישוט."""
+כל צבע אחר בממשק נייטרלי: צבע = מצב של שדה, ולא קישוט.
+
+היחסים נבדקים ב-tests/test_ui_contrast.py (חישוב WCAG מתוך ה-CSS עצמו), כדי ששינוי גוון לא יפיל טקסט
+מתחת ל-4.5:1 בלי שישימו לב.
+לתשומת לב: Streamlit עוטף טקסט של כפתור ב-<p> שיש לו צבע משלו, ולכן כל כלל צבע של כפתור
+חייב להגיע יחד עם כלל "inherit" לתווית (סעיף 5), אחרת הצבע שנכתב כאן פשוט לא יופיע."""
 import html
 
 import streamlit as st
@@ -86,6 +91,9 @@ CSS = """
   --paper: #FFFFFF; --canvas: #F7F6F2; --wash: #F2F0EA;
   --line: #E3E0D7; --line-2: #CFCBBF;
   --accent: #2D5F6B; --accent-ink: #1F4A54; --accent-soft: #E7EFF0; --accent-line: #CFDFE1;
+  /* כפתור ראשי: לבן על טורקיז. כל שלושת הגוונים נבדקו מול --on-accent: 7.09 / 9.22 / 4.99 ל-1.
+     --ink-disabled נבדק מול --wash (4.79:1), הרקע של כפתור משני מושבת */
+  --on-accent: #FFFFFF; --accent-hover: #244D58; --accent-muted: #4A7682; --ink-disabled: #656B65;
   --radius: 10px; --radius-sm: 8px; --radius-pill: 999px;
   --shadow: 0 1px 2px rgba(28, 35, 33, 0.04), 0 4px 14px rgba(31, 74, 84, 0.05);
   --shadow-lift: 0 2px 6px rgba(28, 35, 33, .05), 0 10px 30px rgba(31, 74, 84, .08);
@@ -167,12 +175,35 @@ code {font-family: 'IBM Plex Mono', monospace !important; direction: ltr; unicod
 /* ============================================================
    5. פקדים: כפתורים, שדות קלט, העלאה, הודעות
    ============================================================ */
+/* תווית הכפתור: Streamlit עוטף אותה ב-<p> בתוך stMarkdownContainer, ולכלל הטיפוגרפיה של אותו <p> (סעיף 2)
+   יש הצהרת color משלו, והצהרה על האלמנט עצמו גוברת תמיד על צבע שנורש מהכפתור. לכן בלי השורה
+   הבאה טקסט הכפתור נשאר כהה גם על רקע כהה: #1C2321 על הטורקיז של כפתור ראשי = 2.26:1,
+   ועל גוון מעבר העכבר 1.74:1. "inherit" מחזיר כל תווית כפתור לצבע שנקבע לכפתור. */
+.stButton > button [data-testid="stMarkdownContainer"], .stDownloadButton > button [data-testid="stMarkdownContainer"],
+.stButton > button [data-testid="stMarkdownContainer"] p, .stDownloadButton > button [data-testid="stMarkdownContainer"] p,
+.stButton > button p, .stDownloadButton > button p {color: inherit !important; font-weight: inherit !important;}
 .stButton > button, .stDownloadButton > button {border-radius: var(--radius-sm); font-weight: 500; border: 1px solid var(--line-2);
       background: var(--paper); color: var(--ink); transition: border-color .15s, background .15s;}
 .stButton > button:hover, .stDownloadButton > button:hover {border-color: var(--accent); color: var(--accent);}
-.stButton > button[kind="primary"], .stDownloadButton > button[kind="primary"] {background: var(--accent); border-color: var(--accent); color: #fff;}
-.stButton > button[kind="primary"]:hover, .stDownloadButton > button[kind="primary"]:hover {background: #244D58; border-color: #244D58; color: #fff;}
-.stButton > button:disabled, .stDownloadButton > button:disabled {background: var(--wash); color: #767C76; border-color: var(--line);}
+/* כפתור ראשי ("עבד", "הורד אקסל", "אשרי..."): טקסט לבן ומודגש בכל המצבים. הבורר של data-testid
+   נשמר לגרסה של Streamlit שלא תעביר את kind ל-DOM. opacity: 1 כדי שהיחס שנמדד יהיה היחס שרואים. */
+.stButton > button[kind="primary"], .stDownloadButton > button[kind="primary"],
+.stButton > button[kind="primary"]:focus, .stDownloadButton > button[kind="primary"]:focus,
+.stButton > button[kind="primary"]:focus-visible, .stDownloadButton > button[kind="primary"]:focus-visible,
+.stButton > button[kind="primary"]:active, .stDownloadButton > button[kind="primary"]:active,
+[data-testid="stBaseButton-primary"], [data-testid="stBaseButton-primaryFormSubmit"] {background: var(--accent);
+      border-color: var(--accent); color: var(--on-accent) !important; font-weight: 700 !important; opacity: 1;}
+.stButton > button[kind="primary"]:hover, .stDownloadButton > button[kind="primary"]:hover,
+[data-testid="stBaseButton-primary"]:hover, [data-testid="stBaseButton-primaryFormSubmit"]:hover {background: var(--accent-hover);
+      border-color: var(--accent-hover); color: var(--on-accent) !important;}
+/* מיקוד מהמקלדת: טבעת מסגרת מחוץ לכפתור, כדי שתיראה גם על כפתור ראשי כהה (8.97:1 מול --canvas) */
+.stButton > button:focus-visible, .stDownloadButton > button:focus-visible {outline: 3px solid var(--accent-ink); outline-offset: 2px;}
+/* מושבת: כפתור משני = טקסט כהה על רקע בהיר (4.79:1); כפתור ראשי = לבן מודגש על טורקיז מעומעם (4.99:1) */
+.stButton > button:disabled, .stDownloadButton > button:disabled {background: var(--wash); color: var(--ink-disabled);
+      border-color: var(--line); opacity: 1;}
+.stButton > button[kind="primary"]:disabled, .stDownloadButton > button[kind="primary"]:disabled,
+[data-testid="stBaseButton-primary"]:disabled, [data-testid="stBaseButton-primaryFormSubmit"]:disabled {background: var(--accent-muted);
+      border-color: var(--accent-muted); color: var(--on-accent) !important; font-weight: 700 !important; opacity: 1;}
 [data-baseweb="input"], [data-baseweb="select"] > div {border-radius: var(--radius-sm);}
 .stTextInput label p, .stSelectbox label p, .stMultiSelect label p, [data-testid="stDateInput"] label p, .stNumberInput label p,
 [data-testid="stSlider"] label p {font-size: var(--fs-label) !important; color: var(--ink-2) !important;}
@@ -209,21 +240,21 @@ code {font-family: 'IBM Plex Mono', monospace !important; direction: ltr; unicod
 @media (max-width: 1100px) {.kpis {grid-template-columns: repeat(4, minmax(0, 1fr));} .kpi {border-bottom: 1px solid var(--line);}}
 .st-key-toolbar {background: var(--paper) !important; border: 1px solid var(--line) !important; border-radius: var(--radius) !important;
       box-shadow: var(--shadow); padding: var(--sp-2) var(--sp-3) !important;}
-/* מסנני הסטטוס בטבלת העיבוד: גלולות במילוי רך לפי המצב */
+/* מסנני הסטטוס בטבלת העיבוד: גלולות במילוי רך לפי המצב. הנבחרת: לבן על --*-ink (6.07 עד 7.67 ל-1) */
 .st-key-status_filter [role="radiogroup"] {gap: 6px; flex-wrap: wrap;}
 .st-key-status_filter button {--chip-bg: var(--wash); --chip-ink: var(--ink-2); --chip-on: var(--accent);
       border: 1px solid transparent !important; border-radius: var(--radius-pill) !important; background: var(--chip-bg) !important;
       color: var(--chip-ink) !important; padding: 5px var(--sp-4) !important; min-height: 2.1rem; box-shadow: none !important;
       transition: background .15s, color .15s;}
 .st-key-status_filter button p {color: inherit !important; font-size: var(--fs-label); white-space: nowrap;}
-.st-key-status_filter button p strong {font-weight: 700; opacity: .8;}
-.st-key-status_filter button:nth-of-type(2) {--chip-bg: var(--green-fill); --chip-ink: var(--green-ink); --chip-on: var(--green-dot);}
-.st-key-status_filter button:nth-of-type(3) {--chip-bg: var(--orange-fill); --chip-ink: var(--orange-ink); --chip-on: var(--orange-dot);}
-.st-key-status_filter button:nth-of-type(4) {--chip-bg: var(--yellow-fill); --chip-ink: var(--yellow-ink); --chip-on: var(--yellow-dot);}
-.st-key-status_filter button:nth-of-type(5) {--chip-bg: var(--paper); --chip-ink: var(--ink-3); --chip-on: var(--empty-dot); border: 1px dashed var(--line-2) !important;}
+/* הספירה בתוך הגלולה נבדלת במשקל בלבד: opacity: .8 הורידה את היחס ל-3.85 עד 4.12 ל-1 */
+.st-key-status_filter button p strong {font-weight: 700;}
+.st-key-status_filter button:nth-of-type(2) {--chip-bg: var(--green-fill); --chip-ink: var(--green-ink); --chip-on: var(--green-ink);}
+.st-key-status_filter button:nth-of-type(3) {--chip-bg: var(--orange-fill); --chip-ink: var(--orange-ink); --chip-on: var(--orange-ink);}
+.st-key-status_filter button:nth-of-type(4) {--chip-bg: var(--yellow-fill); --chip-ink: var(--yellow-ink); --chip-on: var(--yellow-ink);}
+.st-key-status_filter button:nth-of-type(5) {--chip-bg: var(--paper); --chip-ink: var(--ink-3); --chip-on: var(--empty-ink); border: 1px dashed var(--line-2) !important;}
 .st-key-status_filter button:hover {filter: brightness(0.97);}
 .st-key-status_filter button[data-selected="true"] {background: var(--chip-on) !important; color: var(--paper) !important; border-color: var(--chip-on) !important;}
-.st-key-status_filter button[data-selected="true"] p strong {opacity: 1;}
 .st-key-focus_wrap {background: var(--accent-soft); border: 1px solid var(--accent-line); border-radius: var(--radius-pill);
       padding: 5px var(--sp-4) !important; width: fit-content; margin-inline-start: auto;}
 .st-key-focus_wrap label p {font-size: var(--fs-label) !important; font-weight: 600 !important; color: var(--accent-ink) !important; white-space: nowrap;}
@@ -241,7 +272,7 @@ code {font-family: 'IBM Plex Mono', monospace !important; direction: ltr; unicod
 .st-key-rec_counters .stButton > button {border-radius: var(--radius-pill); background: var(--wash); border-color: transparent;
       color: var(--ink-2); font-size: var(--fs-label); font-weight: 500; min-height: 2.2rem; padding: 0 var(--sp-4); white-space: nowrap;}
 .st-key-rec_counters .stButton > button:hover {border-color: var(--accent-line); background: var(--accent-soft); color: var(--accent-ink);}
-.st-key-rec_counters .stButton > button[kind="primary"] {background: var(--accent); border-color: var(--accent); color: var(--paper);}
+.st-key-rec_counters .stButton > button[kind="primary"] {background: var(--accent); border-color: var(--accent); color: var(--on-accent);}
 .st-key-rec_top .stTextInput input {font-size: var(--fs-body); height: 2.3rem;}
 .st-key-rec_filters [data-testid="stExpander"] {border: 1px solid var(--line); background: var(--paper);}
 .st-key-rec_filters [data-testid="stExpander"] summary p {font-weight: 500; color: var(--ink-2); font-size: var(--fs-label);}

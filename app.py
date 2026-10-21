@@ -17,7 +17,7 @@ from src import service
 from src import ui_theme as ui
 from src.intake import pdf_to_images, rotate_jpeg
 from src.schema import PageExtraction
-from src.privacy import GENERIC_ERROR_HE, log_server_error
+from src.privacy import GENERIC_ERROR_HE, is_production, log_server_error
 from src.review import filter_counts, next_attention_cell, row_masks, visible_rows
 from src.upload import UploadRejected, cleanup_stale_uploads, process_upload, to_pdf_bytes  # noqa: F401  (to_pdf_bytes: לשימוש חיצוני / בדיקות)
 
@@ -30,7 +30,9 @@ CONFIRMED_HEX = "#" + CONFIRMED.fgColor.rgb[-6:]      # שם שאושר על י�
 YELLOW_HEX = "#" + YELLOW.fgColor.rgb[-6:]            # ערך בכתב יד, שתי קריאות מסכימות: מבט לאישור
 # הצבעים עצמם ב-src/ui_theme.py (מקום אחד לעיצוב). כאן רק המיפוי מצבע המילוי של האקסל (src/export.py) לשם המצב.
 HEX_STATE = {GREEN_HEX: "green", ORANGE_HEX: "orange", YELLOW_HEX: "yellow", CONFIRMED_HEX: "confirmed"}
-UI_DOT = {**ui.STATE_DOT, "ink": ui.INK}              # צבע המספר בפס המדדים
+# צבע המספר בפס המדדים: גוון הטקסט של המצב (STATE_INK), שנבדק ל-4.5:1 מול לבן.
+# גווני הנקודה (STATE_DOT) בהירים מדי לטקסט: כתום 4.26, זהב 4.30, ריק 3.10 ל-1.
+UI_TONE = {**ui.STATE_INK, "ink": ui.INK}
 TABLE_H = 520                                        # גובה מרבי של הטבלה ברוחב מלא (גלילה פנימית); כרטיס הבדיקה נפתח מתחתיה
 # סינון מהיר: מפתח -> תווית. "תקין" = שורה בלי אף שדה לבדיקה (ירוק או מאושר בלבד); הלוגיקה ב-src/review.py
 FILTERS = {"all": "הכול", "green": "תקין", "orange": "לבדיקה", "yellow": "זהב", "empty": "ריק"}     # הצבע בא מרקע הכפתור, בלי אייקונים
@@ -496,12 +498,18 @@ if st.session_state.get("view") == "records":   # מסך הרשומות לא מ�
     records_screen.render(db, he_flag)
     st.stop()
 
+# כפתור הדוגמה הוא לדמו בלבד (טופסי חלק 1 מהריצה השמורה), ואין לו מקום בפריסה של המעבדה:
+# ב-production הוא אינו מוצג כלל (ולא רק מושבת), והמצב הריק מסביר רק את דרך ההעלאה.
+SHOW_SAMPLE = not is_production()
+
 with st.container(border=True, key="action_card"):         # כרטיס פעולה אחד: העלאה, עיבוד, דוגמה והורדת אקסל (נדבק לראש המסך בגלילה)
-    up_col, run_col, sample_col, dl_col = st.columns([4.4, 1, 1.4, 1.2], vertical_alignment="center", gap="small")
+    widths = [4.4, 1, 1.4, 1.2] if SHOW_SAMPLE else [4.4, 1, 1.2]
+    cols = st.columns(widths, vertical_alignment="center", gap="small")
+    up_col, run_col, dl_col = (cols[0], cols[1], cols[3]) if SHOW_SAMPLE else (cols[0], cols[1], cols[2])
     with up_col:
         upload = st.file_uploader("העלאת טופס (PDF או תמונה)", type=["pdf", "png", "jpg", "jpeg"], label_visibility="collapsed")
     run_clicked = run_col.button("עבד", type="primary", disabled=upload is None, width="stretch")
-    sample_clicked = sample_col.button("טען דוגמה מחלק 1", width="stretch")
+    sample_clicked = cols[2].button("טען דוגמה מחלק 1", width="stretch") if SHOW_SAMPLE else False
     download_slot = dl_col.empty()
     download_slot.button("הורד אקסל", disabled=True, width="stretch", key="dl_disabled", help="זמין אחרי שיש תוצאות")
 
@@ -556,8 +564,9 @@ if run_clicked and upload is not None:
 pages = st.session_state.get("pages")
 images = st.session_state.get("images", {})
 if not pages:
-    st.markdown("<div class='empty-state'><b>אין עדיין תוצאות</b>"
-                "<p>העלי קובץ ולחצי \"עבד\", או לחצי \"טען דוגמה מחלק 1\".</p></div>", unsafe_allow_html=True)
+    hint = ("העלי קובץ ולחצי \"עבד\", או לחצי \"טען דוגמה מחלק 1\"." if SHOW_SAMPLE
+            else "העלי קובץ PDF או תמונה ולחצי עבד")
+    st.markdown(f"<div class='empty-state'><b>אין עדיין תוצאות</b><p>{hint}</p></div>", unsafe_allow_html=True)
     st.stop()
 
 overrides = st.session_state.setdefault("name_overrides", {})
@@ -572,15 +581,15 @@ n_empty = fields - n_green - n_orange - n_confirmed - n_yellow
 
 orange_ok, orange_total = orange_correct(pages) if st.session_state.get("is_sample") else (0, 0)
 st.markdown(kpi_cards([                                     # סדר מימין לשמאל: כמות, ואז מהבטוח אל מה שדורש עבודה
-    ("טפסים", str(len(df)), f"{fields} שדות · {len(skipped)} עמודים דולגו", UI_DOT["ink"], "התחייבויות (שורות בטבלה)"),
-    ("שדות ירוקים", str(n_green), share(n_green, fields), UI_DOT["green"], "נקרא בלי דגל"),
-    ("שדות צהובים", str(n_yellow), share(n_yellow, fields), UI_DOT["yellow"], YELLOW_TEXT),
-    ("שדות כתומים", str(n_orange), share(n_orange, fields), UI_DOT["orange"], "כולל שדה ריק שסומן לבדיקה"),
-    ("שדות ריקים", str(n_empty), "לא נמצא, בלי דגל", UI_DOT["empty"], "לא נמצא, בלי דגל"),
-    ("אושרו ידנית", str(n_confirmed), "מיוצא באקסל בכחול", UI_DOT["confirmed"], "ערך שהוקלד או נבחר ידנית; מיוצא באקסל בכחול"),
+    ("טפסים", str(len(df)), f"{fields} שדות · {len(skipped)} עמודים דולגו", UI_TONE["ink"], "התחייבויות (שורות בטבלה)"),
+    ("שדות ירוקים", str(n_green), share(n_green, fields), UI_TONE["green"], "נקרא בלי דגל"),
+    ("שדות צהובים", str(n_yellow), share(n_yellow, fields), UI_TONE["yellow"], YELLOW_TEXT),
+    ("שדות כתומים", str(n_orange), share(n_orange, fields), UI_TONE["orange"], "כולל שדה ריק שסומן לבדיקה"),
+    ("שדות ריקים", str(n_empty), "לא נמצא, בלי דגל", UI_TONE["empty"], "לא נמצא, בלי דגל"),
+    ("אושרו ידנית", str(n_confirmed), "מיוצא באקסל בכחול", UI_TONE["confirmed"], "ערך שהוקלד או נבחר ידנית; מיוצא באקסל בכחול"),
     ("כתומים שנכונים", f"{orange_ok}<small>/ {orange_total}</small>" if orange_total else "—",
      "מול טבלת האמת" if orange_total else "אין טבלת אמת לקובץ",
-     UI_DOT["orange"], "נמדד מול טבלת האמת, רק בדוגמה מחלק 1 ורק בתאים כתומים שיש בהם ערך" if orange_total else "אין טבלת אמת לקובץ שהועלה"),
+     UI_TONE["orange"], "נמדד מול טבלת האמת, רק בדוגמה מחלק 1 ורק בתאים כתומים שיש בהם ערך" if orange_total else "אין טבלת אמת לקובץ שהועלה"),
 ]), unsafe_allow_html=True)
 if st.session_state.pop("db_error", False):
     st.warning("שמירת השינוי האחרון למסד הנתונים נכשלה (פרטים במסוף השרת). השינוי מוצג כאן אך לא נשמר.")
