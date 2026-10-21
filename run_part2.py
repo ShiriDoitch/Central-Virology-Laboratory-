@@ -19,7 +19,7 @@ TRUTH = Path("data/truth_part2.xlsx")
 OUT = Path("outputs/part2_eval")
 PAGES = list(range(1, 23))
 WEAK_GROUP = [19, 20, 21, 22]
-LIMITS = {"gemini-3.8-flash": 18, "gemini-3.5-flash-lite": 60}
+LIMITS = {"gemini-3.6-flash": 18, "gemini-3.5-flash-lite": 60}
 FIELDS = ["date", "center", "sender", "commitment", "id", "first_name", "last_name"]
 COLS = [("confident_ok", "ירוק נכון"), ("confident_wrong", "**ירוק שגוי**"), ("orange_ok", "כתום נכון"),
         ("orange_wrong", "כתום שגוי"), ("empty_flagged", "ריק מסומן"), ("empty_missed", "שגיאה בלי סימון (ריק)"),
