@@ -10,7 +10,7 @@ import pymupdf
 import pytest
 from streamlit.testing.v1 import AppTest
 
-from src import repo, status, ui_text
+from src import repo, service, status, ui_text
 from test_guided_review import BLANK, FLAGGED_BLANK, ORANGE, VALUES, YELLOW, cells, seed
 
 APP = str(Path(__file__).resolve().parent.parent / "app.py")
@@ -187,3 +187,79 @@ def test_no_gendered_imperative_is_left_in_the_interface():
         if hits:
             found[name] = hits
     assert found == {}, found
+
+
+# ---------- 2: מקרא הצבעים ותוויות הקבוצות ----------
+
+SAMPLE_READY = Path("outputs/clean_part1_v4b").exists() and Path("data/clean_part1.pdf").exists()
+needs_sample = pytest.mark.skipif(not SAMPLE_READY, reason="needs the saved sample run")
+
+
+def loaded_screen(monkeypatch, mode: str = "dev", cell=None) -> AppTest:
+    """מסך העיבוד עם תוצאות (הדוגמה השמורה, בלי קריאות API), ואם נתון cell גם כרטיס הבדיקה פתוח."""
+    monkeypatch.setenv("PRIVACY_MODE", mode)
+    at = AppTest.from_file(APP, default_timeout=120)
+    at.run()
+    next(b for b in at.button if "דוגמה" in b.label).click().run()
+    if cell is not None:
+        at.session_state["selected_cell"] = cell
+        at.run()
+    assert not at.exception, at.exception
+    return at
+
+
+def screen_text(at: AppTest) -> str:
+    return "\n".join(m.value for m in at.markdown if not m.value.startswith("<style>"))
+
+
+@needs_sample
+def test_the_legend_explains_every_colour_in_one_place(monkeypatch):
+    body = screen_text(loaded_screen(monkeypatch))
+    assert body.count("class='legend'") == 1                      # מקום אחד קבוע, מתחת לטבלה
+    for state, meaning in (("green", "נקרא בביטחון"), ("yellow", "שתי קריאות הסכימו, מספיק מבט"),
+                           ("orange", "לבדיקה"), ("confirmed", "אושר ידנית"), ("empty", "לא נמצא בטופס")):
+        assert f"state {state}'><i class='dot'></i>{meaning}" in body, (state, meaning)
+    assert "כתום = לבדיקה אנושית" not in body                     # הכיתוב הישן בכותרת הוסר
+
+
+@needs_sample
+def test_the_two_groups_say_what_they_do(monkeypatch):
+    """הגלולות מסננות שורות, המונים סופרים שדות: לכל קבוצה תווית משלה."""
+    body = screen_text(loaded_screen(monkeypatch))
+    assert "סינון שורות" in body and "אילו שורות מוצגות בטבלה" in body
+    assert "ספירת שדות" in body and "כמה שדות יש בכל מצב" in body
+
+
+# ---------- 3: קריאות גולמיות של המודל רק ב-dev ----------
+
+RAW_READINGS = "קריאות גולמיות של המודל"
+
+
+@needs_sample
+def test_raw_model_readings_are_a_dev_tool_only(tmp_path, monkeypatch):
+    """ב-production הכפתור "טעינת דוגמה" אינו קיים, ולכן המסך נטען כאן דרך אסימון ריצה (כמו אחרי רענון),
+    שאינו תלוי במצב הפרטיות."""
+    monkeypatch.setenv("APP_DB_PATH", str(tmp_path / "raw.db"))
+    conn = repo.connect(tmp_path / "raw.db")
+    page = json.loads((Path("outputs/clean_part1_v4b") / "p1.json").read_text(encoding="utf-8"))
+    store = service.Persister(conn, "a.pdf", b"raw-bytes")
+    store.start(1)
+    store.page(page)
+    store.finish()
+
+    def screen(mode: str) -> AppTest:
+        monkeypatch.setenv("PRIVACY_MODE", mode)
+        at = AppTest.from_file(APP, default_timeout=120)
+        at.query_params["run"] = store.token
+        at.run()
+        at.session_state["selected_cell"] = (0, "שם פרטי")
+        at.run()
+        assert not at.exception, (mode, at.exception)
+        return at
+
+    dev = screen("dev")
+    assert RAW_READINGS in [e.label for e in dev.get("expander")]
+    prod = screen("production")
+    labels = [e.label for e in prod.get("expander")]
+    assert RAW_READINGS not in labels
+    assert labels, "שאר המרחיבים במסך נשארים"

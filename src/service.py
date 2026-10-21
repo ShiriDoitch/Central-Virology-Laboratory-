@@ -5,7 +5,7 @@ from dataclasses import dataclass, field
 from datetime import datetime, timedelta, timezone
 
 from . import db_export, guided_review, page_store, repo, storage_config
-from .confirm import field_crop_from_image, normalize_override, stored_field_fractions
+from .confirm import FIELD_REGION, field_crop_from_image, normalize_override, stored_field_fractions
 from .export import FIELD_KEYS, Cell, build_rows
 from .privacy import log_server_error
 
@@ -42,6 +42,7 @@ class Persister:
     def __init__(self, conn, filename: str, data: bytes):
         self.conn, self.filename, self.sha = conn, filename, sha256_of(data)
         self.upload_id: int | None = None
+        self.token: str | None = None                # אסימון הריצה; נשמר ב-URL כדי שרענון יחזיר את אותו מסך
         self.errors = 0
         self.incomplete_pages: list[int] = []        # עמודים שחרגו מתקציב הזמן: ההעלאה נשארת לא שלמה וניתן להמשיך בהעלאה חוזרת
         self.counts = {"created": 0, "updated": 0, "skipped_approved": 0}
@@ -49,12 +50,17 @@ class Persister:
     def start(self, page_count: int) -> int:
         existing = repo.find_upload(self.conn, self.sha)
         self.upload_id = existing["id"] if existing else repo.create_upload(self.conn, self.filename, self.sha, page_count)
+        try:
+            self.token = repo.create_run(self.conn, self.upload_id)
+        except Exception as e:                      # בלי אסימון המסך עובד כרגיל, רק לא ישרוד רענון
+            log_server_error("create_run", e)
         return self.upload_id
 
     def page(self, page_result: dict) -> None:
         if page_result.get("error_code") == "page_timeout":
             self.incomplete_pages.append(page_result.get("page"))
         try:
+            repo.save_page_result(self.conn, self.upload_id, page_result["page"], page_result)   # לשחזור המסך אחרי רענון
             rows = machine_rows(page_result) if (page_result.get("pass1") or {}).get("ok") else []
             for er in rows:
                 _rid, outcome = repo.save_machine_record(self.conn, self.upload_id, page_result["page"], er.index, machine_fields(er.cells))
@@ -89,6 +95,42 @@ class Persister:
     def finish(self) -> None:
         if self.upload_id is not None and not self.errors and not self.incomplete_pages:
             repo.complete_upload(self.conn, self.upload_id)
+
+
+def run_crops(conn, upload_id: int, page_no: int, image: bytes) -> dict:
+    """חיתוך לכל אזור בעמוד (patient / barcode / commitment / receipt) מתמונת העמוד השמורה, באותה לוגיקה
+    של כרטיס הרשומה. אחרי רענון אין יותר PDF זמני לחתוך ממנו, ולכן החיתוך נעשה מהתמונה."""
+    out: dict = {}
+    for key, fractions in (repo.get_page_regions(conn, upload_id, page_no) or {}).items():
+        region = FIELD_REGION.get(key)
+        if region and (page_no, region) not in out:
+            out[(page_no, region)] = field_crop_from_image(image, fractions)
+    return out
+
+
+def load_run(conn, token: str | None) -> dict | None:
+    """כל מה שמסך העיבוד צריך כדי להיראות אותו דבר אחרי רענון הדפדפן, לפי אסימון הריצה שב-URL:
+    תוצאות העמודים, תמונות העמודים, חיתוכי האזורים והאישורים שנשמרו. None = אין ריצה כזאת (אסימון חסר,
+    שגוי, או נתונים שנמחקו), והמסך מתחיל ריק. אסימון של ריצה אחת לא חושף ריצה אחרת."""
+    run = repo.find_run(conn, token)
+    if run is None:
+        return None
+    pages = repo.page_results(conn, run["upload_id"])
+    if not pages:
+        return None
+    images, crops = {}, {}
+    for page_result in pages:
+        page_no = page_result.get("page")
+        image = page_store.read(run["upload_id"], page_no) if page_no else None
+        if image is None:                          # תמונה שלא נשמרה או שנמחקה אחרי אישור: המסך מציג בלעדיה
+            continue
+        images[page_no] = image
+        try:
+            crops.update(run_crops(conn, run["upload_id"], page_no, image))
+        except Exception as e:
+            log_server_error(f"run_crops page {page_no}", e)
+    return {"token": run["token"], "upload_id": run["upload_id"], "pages": pages, "images": images,
+            "field_crops": crops, "overrides": load_overrides(conn, run["upload_id"])}
 
 
 def find_completed_upload(conn, data: bytes) -> dict | None:

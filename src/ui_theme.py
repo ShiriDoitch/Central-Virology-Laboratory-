@@ -65,6 +65,19 @@ def field_head(label: str, state: str) -> str:
     return f"<div class='fld-head'><span class='ro-label'>{html.escape(label)}</span>{dot(state)}</div>"
 
 
+def legend(items) -> str:
+    """מקרא הצבעים: נקודה + מה זה אומר, לכל מצב. שורה אחת שקטה, תמיד באותו מקום (מתחת לטבלה),
+    כך שהצבע לא נשאר לבד ואין צורך לזכור מה הוא אומר. items = רצף של (מצב, משמעות)."""
+    cells = "".join(f"<span class='lg-item'>{dot(state, text)}</span>" for state, text in items)
+    return f"<div class='legend'><span class='lg-title'>מה הצבעים אומרים</span>{cells}</div>"
+
+
+def group_label(title: str, hint: str | None = None) -> str:
+    """תווית קבוצת פקדים ("סינון שורות" מול "ספירת שדות"), כדי שיהיה ברור מה כל קבוצה עושה."""
+    extra = f"<span class='gl-hint'>{html.escape(hint)}</span>" if hint else ""
+    return f"<div class='group-label'><span class='gl-title'>{html.escape(title)}</span>{extra}</div>"
+
+
 def section(title: str, hint: str | None = None) -> str:
     """כותרת מקטע: שורה אחת, משקל אחד, בלי אייקונים."""
     extra = f"<span class='sec-hint'>{html.escape(hint)}</span>" if hint else ""
@@ -135,6 +148,15 @@ code {font-family: 'IBM Plex Mono', monospace !important; direction: ltr; unicod
 .sec-title {font-size: var(--fs-section); font-weight: 600; color: var(--ink);}
 .sec-hint {font-size: var(--fs-cap); color: var(--ink-3);}
 .col-label {font-size: var(--fs-label); font-weight: 700; letter-spacing: .02em; color: var(--ink-3); margin-bottom: var(--sp-1);}
+/* תווית קבוצת פקדים: שורה שקטה אחת מעל הקבוצה (מה היא עושה), כדי שלא יתבלבלו בין סינון שורות לספירת שדות */
+.group-label {display: flex; align-items: baseline; gap: var(--sp-2); margin: 0 0 var(--sp-1); flex-wrap: wrap;}
+.group-label .gl-title {font-size: var(--fs-label); font-weight: 700; color: var(--ink-2);}
+.group-label .gl-hint {font-size: var(--fs-cap); color: var(--ink-3);}
+/* מקרא הצבעים: שורה אחת מתחת לטבלה, תמיד באותו מקום. נקודה + מילה, בלי מסגרות ובלי צבע רקע */
+.legend {display: flex; align-items: center; gap: var(--sp-2) var(--sp-5); flex-wrap: wrap; background: var(--paper);
+      border: 1px solid var(--line); border-radius: var(--radius); padding: 9px var(--sp-4); margin: var(--sp-1) 0 var(--sp-2);}
+.legend .lg-title {font-size: var(--fs-cap); font-weight: 700; color: var(--ink-2); margin-inline-end: var(--sp-1);}
+.legend .lg-item .state {font-size: var(--fs-label); white-space: nowrap;}
 .quiet {font-size: var(--fs-cap); color: var(--ink-3); line-height: var(--lh-body);}
 .quiet b {color: var(--ink-2); font-weight: 600;}
 .counter {font-size: var(--fs-label); color: var(--ink-2); white-space: nowrap; text-align: center !important;}

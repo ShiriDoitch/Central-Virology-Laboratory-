@@ -2,9 +2,13 @@
 
 ערך סופי של שדה נשמר בעמודות של records (ומרכזי ב-record_centers); מה שהמערכת קראה, הצבע והדגלים נשמרים ב-field_states.
 סטטוס: pending (יש תא כתום / צהוב / ריק) | ready (כל התאים ירוקים או מאושרים) | approved (אושר ידנית; לא נדרס בעיבוד חוזר).
+ריצת עיבוד (runs) = אסימון אקראי לקובץ שעובד, שנשמר ב-URL של הדפדפן; page_results = תוצאת המודל לכל עמוד
+כפי שהיא, כדי שרענון הדפדפן יחזיר את אותו מסך עיבוד בדיוק (ראו service.load_run). שתי הטבלאות מכילות נתוני
+מטופל כמו שאר המסד, ונמחקות ב"מחיקת כל הנתונים".
 כל שינוי נרשם ב-audit_log. הדגלים נשמרים כקודים (מחרוזות מ-rules.py)."""
 import json
 import os
+import secrets
 import sqlite3
 from datetime import datetime, timezone
 from pathlib import Path
@@ -64,6 +68,18 @@ CREATE TABLE IF NOT EXISTS field_states (
     human_edited INTEGER NOT NULL DEFAULT 0,
     cell_confirmed INTEGER NOT NULL DEFAULT 0,
     PRIMARY KEY (record_id, field)
+);
+CREATE TABLE IF NOT EXISTS runs (
+    token TEXT PRIMARY KEY,
+    upload_id INTEGER NOT NULL REFERENCES uploads(id) ON DELETE CASCADE,
+    created_at TEXT NOT NULL
+);
+CREATE INDEX IF NOT EXISTS idx_runs_upload ON runs(upload_id);
+CREATE TABLE IF NOT EXISTS page_results (
+    upload_id INTEGER NOT NULL REFERENCES uploads(id) ON DELETE CASCADE,
+    page_no INTEGER NOT NULL,
+    result_json TEXT NOT NULL,
+    PRIMARY KEY (upload_id, page_no)
 );
 CREATE TABLE IF NOT EXISTS page_regions (
     upload_id INTEGER NOT NULL REFERENCES uploads(id) ON DELETE CASCADE,
@@ -157,6 +173,48 @@ def get_page_regions(conn, upload_id: int, page_no: int) -> dict | None:
     return json.loads(row[0]) if row else None
 
 
+# ---------- ריצת עיבוד: אסימון ב-URL, ותוצאת המודל לכל עמוד ----------
+
+def create_run(conn, upload_id: int) -> str:
+    """פותח ריצה חדשה ומחזיר אסימון אקראי (32 תווים). האסימון הוא מה שנשמר ב-URL: מי שאין לו אותו
+    לא יכול להגיע לנתונים של ריצה אחרת, ומזהה רץ (1, 2, 3) לא היה נותן את זה."""
+    token = secrets.token_hex(16)
+    with conn:
+        conn.execute("INSERT INTO runs (token, upload_id, created_at) VALUES (?,?,?)", (token, upload_id, _now()))
+    return token
+
+
+def find_run(conn, token: str | None) -> dict | None:
+    """הריצה לפי האסימון, או None אם אין כזה (אסימון שגוי, או נתונים שנמחקו): הקורא מתחיל ריק."""
+    if not token or not isinstance(token, str):
+        return None
+    row = conn.execute("SELECT * FROM runs WHERE token = ?", (token,)).fetchone()
+    return dict(row) if row else None
+
+
+def runs_of_upload(conn, upload_id: int) -> list[str]:
+    return [r[0] for r in conn.execute("SELECT token FROM runs WHERE upload_id = ? ORDER BY created_at", (upload_id,))]
+
+
+def save_page_result(conn, upload_id: int, page_no: int, result: dict) -> None:
+    """תוצאת המודל לעמוד כפי שהיא (אותו מבנה שמסך העיבוד עובד איתו), לשחזור המסך אחרי רענון."""
+    with conn:
+        conn.execute("INSERT INTO page_results (upload_id, page_no, result_json) VALUES (?,?,?) "
+                     "ON CONFLICT(upload_id, page_no) DO UPDATE SET result_json=excluded.result_json",
+                     (upload_id, page_no, json.dumps(result, ensure_ascii=False)))
+
+
+def page_results(conn, upload_id: int) -> list[dict]:
+    """תוצאות העמודים של ההעלאה, בסדר העמודים. שורה פגומה מדולגת (שחזור חלקי עדיף על קריסה)."""
+    out = []
+    for row in conn.execute("SELECT result_json FROM page_results WHERE upload_id = ? ORDER BY page_no", (upload_id,)):
+        try:
+            out.append(json.loads(row[0]))
+        except (ValueError, TypeError):
+            continue
+    return out
+
+
 def page_fully_approved(conn, upload_id: int, page_no: int) -> bool:
     """האם יש לעמוד רשומה אחת לפחות וכולן מאושרות."""
     row = conn.execute("SELECT COUNT(*), SUM(status = 'approved') FROM records WHERE upload_id=? AND page_no=?", (upload_id, page_no)).fetchone()
@@ -164,12 +222,14 @@ def page_fully_approved(conn, upload_id: int, page_no: int) -> bool:
 
 
 def delete_all_rows(conn) -> dict:
-    """מוחק את כל הנתונים: רשומות, מצבי שדות, מרכזיים, אזורים, יומן שינויים והעלאות. מחזיר ספירות לפני המחיקה. VACUUM אחריה
-    כדי שהקובץ לא ישמור שאריות של השורות שנמחקו."""
+    """מוחק את כל הנתונים: רשומות, מצבי שדות, מרכזיים, אזורים, תוצאות העמודים, ריצות, יומן שינויים והעלאות.
+    מחזיר ספירות לפני המחיקה. VACUUM אחריה כדי שהקובץ לא ישמור שאריות של השורות שנמחקו."""
     counts = {t: conn.execute(f"SELECT COUNT(*) FROM {t}").fetchone()[0]
-              for t in ("uploads", "records", "field_states", "record_centers", "page_regions", "audit_log")}
+              for t in ("uploads", "records", "field_states", "record_centers", "page_regions", "page_results",
+                        "runs", "audit_log")}
     with conn:
-        for table in ("audit_log", "field_states", "record_centers", "page_regions", "records", "uploads"):
+        for table in ("audit_log", "field_states", "record_centers", "page_regions", "page_results", "runs",
+                      "records", "uploads"):
             conn.execute(f"DELETE FROM {table}")
         conn.execute("DELETE FROM sqlite_sequence")
     conn.execute("VACUUM")

@@ -48,6 +48,9 @@ CODE_KEYS = ("id", "center", "commitment")           # שדות שהם קודי�
 TITLES = dict(COLUMNS)
 NAME_KEYS = ("first_name", "last_name")
 NOT_READ_TEXT = "לא נקרא, יש להקליד"
+# מקרא הצבעים (מצב -> מה זה אומר). אותם מצבים של src/export.py, בסדר מהבטוח אל מה שחסר.
+LEGEND = (("green", "נקרא בביטחון"), ("yellow", "שתי קריאות הסכימו, מספיק מבט"), ("orange", "לבדיקה"),
+          ("confirmed", "אושר ידנית"), ("empty", "לא נמצא בטופס"))
 YELLOW_TEXT = "נקרא בכתב יד בשתי קריאות עצמאיות שמסכימות, מספיק מבט לאישור"
 
 # הסיבה לבדיקה, בעברית (תצוגה בלבד; הקודים עצמם נשארים בקוד, באקסל וביומן).
@@ -117,6 +120,35 @@ ui.inject()
 
 
 # ---------- טעינה ועיבוד ----------
+
+RUN_PARAM = "run"                                    # אסימון הריצה ב-URL: מה שמחזיר את אותו מסך אחרי רענון
+
+
+def restore_run() -> None:
+    """רענון הדפדפן מאבד את st.session_state, ולכן המסך נבנה מחדש מהמסד לפי אסימון הריצה שב-URL:
+    אותן שורות, אותם אישורים ואותן תמונות עמוד. בלי אסימון, או אסימון שאינו קיים (ריצה שנמחקה, קישור
+    שגוי): מתחילים ריק, בלי שגיאה ובלי נתונים של ריצה אחרת. ניסיון אחד לכל אסימון, כדי שלא תהיה
+    שאילתה בכל ריצה מחדש של הסקריפט."""
+    token = st.query_params.get(RUN_PARAM)
+    if not token or st.session_state.get("pages") or st.session_state.get("_run_tried") == token:
+        return
+    st.session_state["_run_tried"] = token
+    try:
+        run = service.load_run(db(), token)
+    except Exception as e:
+        log_server_error("load_run", e)
+        return
+    if not run:
+        return
+    st.session_state.update(pages=run["pages"], images=run["images"], field_crops=run["field_crops"],
+                            name_overrides=run["overrides"], upload_id=run["upload_id"], is_sample=False)
+
+
+def remember_run(token: str | None) -> None:
+    """שם את אסימון הריצה ב-URL (רק אם השתנה: כתיבה ל-query_params מרעננת את הדף)."""
+    if token and st.query_params.get(RUN_PARAM) != token:
+        st.query_params[RUN_PARAM] = token
+
 
 def page_progress(bar):
     """המאזין של שורת הסטטוס (src/status.py) בזמן העיבוד: פס ההתקדמות מתמלא לפי עמודים שהסתיימו, והטקסט
@@ -391,10 +423,11 @@ def render_evidence(page_res: dict, er, key: str, image: bytes | None) -> None:
         label = "מועמדים שנמצאו (התא ריק)" if not cell.value else "חלופות"
         st.markdown(f"**{label}:** " + " | ".join(md_text(a) for a in cell.alternatives))
     evidence_view.render_crop_and_page(crop, image, er.page, zoom_key=f"zoom_{er.page}_{FIELD_REGION.get(key)}")      # רכיב משותף עם כרטיס הרשומה
-    r1 = PageExtraction.model_validate(page_res["pass1"])
-    p1, p2 = _readings(key, r1, page_res.get("pass2"))
-    with st.expander("קריאות גולמיות של המודל"):
-        st.text(f"מעבר ראשון: {p1 or '—'}\nמעבר שני: {p2 or '—'}")
+    if not is_production():      # קריאות גולמיות הן כלי פיתוח (וגם נתוני מטופל נוספים על המסך): לא בפריסה של המעבדה
+        r1 = PageExtraction.model_validate(page_res["pass1"])
+        p1, p2 = _readings(key, r1, page_res.get("pass2"))
+        with st.expander("קריאות גולמיות של המודל"):
+            st.text(f"מעבר ראשון: {p1 or '—'}\nמעבר שני: {p2 or '—'}")
 
 
 def render_confirmation(page_res: dict, er, key: str, locked: bool = False) -> None:
@@ -510,7 +543,7 @@ def share(n: int, total: int) -> str:
 st.markdown(
     "<div class='lab-header'><div class='title'>חילוץ טפסי התחייבות</div>"
     "<div class='org'>המעבדה המרכזית לנגיפים</div>"
-    "<div class='hint'>שורה אחת לכל התחייבות · כתום = לבדיקה אנושית</div></div>",
+    "<div class='hint'>שורה אחת לכל התחייבות</div></div>",      # משמעות הצבעים: במקרא שמתחת לטבלה
     unsafe_allow_html=True,
 )
 
@@ -530,6 +563,7 @@ if st.session_state.get("view") == "records":   # מסך הרשומות לא מ�
 # כפתור הדוגמה הוא לדמו בלבד (טופסי חלק 1 מהריצה השמורה), ואין לו מקום בפריסה של המעבדה:
 # ב-production הוא אינו מוצג כלל (ולא רק מושבת), והמצב הריק מסביר רק את דרך ההעלאה.
 SHOW_SAMPLE = not is_production()
+restore_run()                                              # רענון הדפדפן: אותו מסך בדיוק, לפי האסימון ב-URL
 
 with st.container(border=True, key="action_card"):         # כרטיס פעולה אחד: העלאה, עיבוד, דוגמה והורדת אקסל (נדבק לראש המסך בגלילה)
     widths = [4.4, 1, 1.4, 1.2] if SHOW_SAMPLE else [4.4, 1, 1.2]
@@ -545,6 +579,7 @@ with st.container(border=True, key="action_card"):         # כרטיס פעול
 if sample_clicked:
     try:
         st.session_state["pages"], st.session_state["images"] = load_sample()
+        st.query_params.pop(RUN_PARAM, None)             # הדוגמה אינה ריצה שמורה: שלא יישאר אסימון של ריצה אחרת
         st.session_state["is_sample"] = True
         st.session_state["upload_id"] = None                 # הדוגמה היא לדמו בלבד ואינה נשמרת במסד הנתונים
         st.session_state["field_crops"], st.session_state["name_overrides"] = {}, {}
@@ -578,6 +613,7 @@ if run_clicked and upload is not None:
                 st.session_state["is_sample"] = False
                 st.session_state["upload_id"] = store.upload_id
                 st.session_state["name_overrides"] = service.load_overrides(db(), store.upload_id) if store.upload_id else {}
+                remember_run(store.token)                # מכאן רענון הדפדפן מחזיר את המסך הזה
                 if store.incomplete_pages:
                     st.warning("העיבוד של עמודים " + ", ".join(map(str, store.incomplete_pages)) + " חרג מהזמן המוקצב לעמוד ולא הושלם. "
                                "שאר העמודים עובדו. להמשך יש להעלות שוב את אותו קובץ.")
@@ -609,6 +645,7 @@ n_yellow = int((colors == YELLOW_HEX).to_numpy().sum())
 n_empty = fields - n_green - n_orange - n_confirmed - n_yellow
 
 orange_ok, orange_total = orange_correct(pages) if st.session_state.get("is_sample") else (0, 0)
+st.markdown(ui.group_label("ספירת שדות", "כמה שדות יש בכל מצב, בכל הטפסים שעובדו"), unsafe_allow_html=True)
 st.markdown(kpi_cards([                                     # סדר מימין לשמאל: כמות, ואז מהבטוח אל מה שדורש עבודה
     ("טפסים", str(len(df)), f"{fields} שדות · {len(skipped)} עמודים דולגו", UI_TONE["ink"], "התחייבויות (שורות בטבלה)"),
     ("שדות ירוקים", str(n_green), share(n_green, fields), UI_TONE["green"], "נקרא בלי דגל"),
@@ -648,6 +685,7 @@ with st.container(key="toolbar"):
             focus = st.toggle(FOCUS_LABEL, key="focus_mode")
     counts = filter_counts(colors, focus)
     with f_col:
+        st.markdown(ui.group_label("סינון שורות", "אילו שורות מוצגות בטבלה"), unsafe_allow_html=True)
         status_filter = st.segmented_control("סינון מהיר לפי סטטוס", list(FILTERS), default="all", key="status_filter",
                                              label_visibility="collapsed",
                                              format_func=lambda k: f"{FILTERS[k]}\u2002**{counts[k]}**") or "all"
@@ -688,6 +726,8 @@ else:
         selected = (int(r_i), c_i)
 if selected and (selected[0] >= len(df) or selected[1] not in TITLES.values()):
     selected = None
+
+st.markdown(ui.legend(LEGEND), unsafe_allow_html=True)      # מקרא הצבעים, תמיד באותו מקום: מתחת לטבלה
 
 # ---------- כרטיס הבדיקה: מתחת לטבלה, ברוחב מלא ----------
 if selected:
