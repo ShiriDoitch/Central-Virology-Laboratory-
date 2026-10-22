@@ -401,7 +401,7 @@ def test_export_card_states_the_real_count_and_defaults_to_excel(db):
     fmt = at.segmented_control(key="rec_export_fmt")
     assert fmt.value == "xlsx"
     dl = next(b for b in at.get("download_button") if b.key == "rec_dl_xlsx")
-    assert dl.label == "הורדת קובץ" and dl.proto.type == "primary" and dl.proto.icon == ":material/download:"
+    assert dl.label == "הורדת קובץ" and dl.proto.type == "primary" and dl.proto.icon == "⬇"
     assert dl.proto.use_container_width is False                   # לא כפתור "ענק" נמתח (גודל לפי התוכן)
 
 

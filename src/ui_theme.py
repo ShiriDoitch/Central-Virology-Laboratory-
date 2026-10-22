@@ -433,16 +433,14 @@ button[data-testid^="stBaseButton-"]:focus-visible, button[data-testid="stPopove
 .st-key-rec_pager [data-baseweb="input"], .st-key-rec_pager [data-baseweb="select"] > div {min-height: 2rem;}
 .st-key-rec_pager .stNumberInput, .st-key-rec_pager .stSelectbox {max-width: 190px;}
 [data-testid="stPopoverBody"] {min-width: 240px;}
-/* כרטיס הייצוא: תג משנה שקט (כמה רשומות), ואז בחירת פורמט (גלולות) + כפתור ההורדה זה לצד זה, במרכז הכרטיס,
-   ברוחב קריאה (לא נמתח לכל הכרטיס, והכפתור אינו "ענק" - גודל לפי התוכן) */
-.st-key-rec_export_body {max-width: 480px; margin: 0 auto; text-align: center;}
+/* כרטיס הייצוא: דו-טורי לפי כיוון הקריאה - טור ימין (הראשון, record.py) כותרת + תג משנה שקט (כמה רשומות),
+   טור שמאל בחירת פורמט (גלולות) + כפתור ההורדה זה לצד זה. הכפתור אינו "ענק": גודל לפי התוכן, לא נמתח. */
 /* תג משנה שקט: אותו גוון כמו "שורה שקטה על רקע בהיר" (ink-3 על wash, נבדק 4.5:1), לא הצהרה כהה ומודגשת */
 .export-badge {display: inline-flex; align-items: center; gap: 4px; font-size: var(--fs-label); font-weight: 500;
       color: var(--ink-3); background: var(--wash); border: 1px solid var(--line); border-radius: var(--radius-pill);
-      padding: 4px 14px; margin-bottom: var(--sp-3);}
+      padding: 4px 14px; margin-top: 2px;}
 .export-badge b {color: var(--ink-2); font-weight: 700;}
-.st-key-rec_export_action {display: flex; align-items: center; justify-content: center; gap: var(--sp-3); flex-wrap: wrap;}
-.st-key-rec_export_action [data-testid="stSegmentedControl"] {display: flex; justify-content: center;}
+.st-key-rec_export_action {display: flex; align-items: center; gap: var(--sp-3); flex-wrap: wrap;}
 .st-key-rec_export_action .stDownloadButton {flex: none;}
 .st-key-rec_export_action .stDownloadButton > button {padding-inline: var(--sp-5);}
 /* כרטיס הרשומה: סרגל פעולות אחד בראש, ואז הכותרת והשדות */
