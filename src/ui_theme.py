@@ -156,15 +156,13 @@ code {font-family: 'IBM Plex Mono', monospace !important; direction: ltr; unicod
 /* ============================================================
    3. טיפוגרפיה של הממשק: כותרת הדף, כותרת מקטע, שורה שקטה
    ============================================================ */
-/* באנר הפתיחה: כרטיס רשמי אחד ברוחב מלא (כרוחב הטבלה למטה), עם מקום שמור ללוגו המשרד/המעבדה בצד הנגדי לטקסט
-   (RTL: הטקסט מימין, הסמלים משמאל). width: 100% + box-sizing מפורשים כדי שהריפוד לא יצמצם את הרוחב בפועל.
-   שורות הטקסט ב-white-space: nowrap + ellipsis: בלי זה, hero-content (שכן ליד hero-badges קבועת-רוחב בתוך flex)
-   יכול להתכווץ מתחת לרוחב התוכן הטבעי שלו ולשבור כל מילה לשורה/תו משלה - זה היה הבאג (טקסט "מרוסק" בצד ימין). */
+/* באנר הפתיחה: שורת הכותרת הרשמית + הלוגו, בתוך כרטיס הפתיחה המאוחד (.st-key-hero_card, סעיף 6) שמכיל גם את
+   ניווט המסכים מתחתיה - לא כרטיס נפרד משלה. מקום שמור ללוגו המשרד בצד הנגדי לטקסט (RTL: הטקסט מימין, הסמל משמאל).
+   width: 100% + box-sizing מפורשים כדי שהריפוד לא יצמצם את הרוחב בפועל. שורות הטקסט ב-white-space: nowrap + ellipsis:
+   בלי זה, hero-content (שכן ליד hero-badges קבועת-רוחב בתוך flex) יכול להתכווץ מתחת לרוחב התוכן הטבעי שלו ולשבור
+   כל מילה לשורה/תו משלה - זה היה הבאג (טקסט "מרוסק" בצד ימין). */
 .hero-banner {display: flex; align-items: center; justify-content: space-between; gap: var(--sp-5); flex-wrap: wrap;
-      width: 100%; box-sizing: border-box;
-      background: linear-gradient(135deg, var(--paper) 0%, var(--accent-soft) 100%); border: 1px solid var(--line);
-      border-right: 4px solid var(--accent); border-radius: var(--radius); box-shadow: var(--shadow-lift);
-      padding: var(--sp-4) var(--sp-5); margin: var(--sp-1) 0 var(--sp-3);}
+      width: 100%; box-sizing: border-box; padding-bottom: var(--sp-3); margin-bottom: var(--sp-3); border-bottom: 1px solid var(--line);}
 .hero-content {flex: 1 1 auto; min-width: 260px; overflow: hidden;}
 .hero-eyebrow, .hero-title, .hero-subtitle {white-space: nowrap; overflow: hidden; text-overflow: ellipsis;}
 .hero-eyebrow {font-size: var(--fs-label); font-weight: 600; letter-spacing: .02em; color: var(--accent-ink); margin: 0 0 2px;}
@@ -337,8 +335,14 @@ button[data-testid^="stBaseButton-"]:focus-visible, button[data-testid="stPopove
 [data-testid="stPopoverBody"] {direction: rtl; text-align: right;}
 
 /* ============================================================
-   6. משטחים: כרטיס פעולה, פס מדדים, סרגל סינון, טבלה
+   6. משטחים: כרטיס פתיחה (כותרת+ניווט), כרטיס פעולה, פס מדדים, סרגל סינון, טבלה
    ============================================================ */
+/* כרטיס הפתיחה המאוחד: הכותרת הרשמית והלוגו למעלה (.hero-banner), וניווט המסכים (segmented_control) מתחתיה
+   באותו כרטיס - בלי פס טאבים צף ונפרד. הגלולות של הניווט כבר מעוצבות גלובלית (סעיף 5); כאן רק המיקום בתוך הכרטיס. */
+.st-key-hero_card {background: linear-gradient(135deg, var(--paper) 0%, var(--accent-soft) 100%) !important;
+      border: 1px solid var(--line) !important; border-right: 4px solid var(--accent) !important; border-radius: var(--radius) !important;
+      box-shadow: var(--shadow-lift); padding: var(--sp-4) var(--sp-5) var(--sp-3) !important; margin-bottom: var(--sp-2);}
+.st-key-hero_card [data-testid="stSegmentedControl"] {margin-top: -4px;}
 .st-key-action_card {position: sticky; top: var(--sp-1); z-index: 100; background: var(--paper) !important; border: 1px solid var(--line) !important;
       border-radius: var(--radius) !important; padding: var(--sp-3) var(--sp-3) !important; box-shadow: var(--shadow);}
 .st-key-action_card [data-testid="stFileUploaderDropzone"] {padding: 0 var(--sp-4); min-height: 44px; height: 44px;}

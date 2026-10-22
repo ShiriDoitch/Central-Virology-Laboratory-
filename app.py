@@ -544,28 +544,31 @@ def share(n: int, total: int) -> str:
 
 # ---------- דף ----------
 
+_goto = st.session_state.pop("_goto_records", None)
+if _goto:                                              # קובץ שכבר עובד: עוברים למסך הרשומות, מסוננות לקובץ הזה
+    st.session_state["view"], st.session_state["rec_upload"] = "records", _goto
+VIEWS = {"process": "עיבוד ובדיקה", "records": "רשומות שמורות"}
+
 if MOH_LOGO_PATH.exists():
     _logo_b64 = base64.b64encode(MOH_LOGO_PATH.read_bytes()).decode()
     _hero_badges = f"<img class='hero-logo' src='data:image/png;base64,{_logo_b64}' alt='משרד הבריאות'>"
 else:                                              # נפילה רכה: קובץ הלוגו חסר (למשל שכפול בלי assets/)
     _hero_badges = "<div class='hero-badge'>משרד<br>הבריאות</div>"
-st.markdown(
-    "<div class='hero-banner'>"
-    "<div class='hero-content'>"
-    "<div class='hero-eyebrow'>משרד הבריאות · המעבדה המרכזית לנגיפים</div>"
-    "<div class='hero-title'>מערכת חילוץ ובקרת טפסי התחייבות</div>"
-    "<div class='hero-subtitle'>שורה אחת לכל התחייבות · בקרת נתונים אוטומטית</div>"      # משמעות הצבעים: במקרא שמתחת לטבלה
-    "</div>"
-    f"<div class='hero-badges'>{_hero_badges}</div>"
-    "</div>",
-    unsafe_allow_html=True,
-)
 
-_goto = st.session_state.pop("_goto_records", None)
-if _goto:                                              # קובץ שכבר עובד: עוברים למסך הרשומות, מסוננות לקובץ הזה
-    st.session_state["view"], st.session_state["rec_upload"] = "records", _goto
-VIEWS = {"process": "עיבוד ובדיקה", "records": "רשומות שמורות"}
-st.segmented_control("מסך", list(VIEWS), default="process", key="view", format_func=VIEWS.get, label_visibility="collapsed")
+with st.container(border=True, key="hero_card"):       # כרטיס פתיחה אחד: כותרת רשמית + לוגו, וניווט המסכים מתחתיה (לא פס צף נפרד)
+    st.markdown(
+        "<div class='hero-banner'>"
+        "<div class='hero-content'>"
+        "<div class='hero-eyebrow'>משרד הבריאות · המעבדה המרכזית לנגיפים</div>"
+        "<div class='hero-title'>מערכת חילוץ ובקרת טפסי התחייבות</div>"
+        "<div class='hero-subtitle'>שורה אחת לכל התחייבות · בקרת נתונים אוטומטית</div>"      # משמעות הצבעים: במקרא שמתחת לטבלה
+        "</div>"
+        f"<div class='hero-badges'>{_hero_badges}</div>"
+        "</div>",
+        unsafe_allow_html=True,
+    )
+    st.segmented_control("מסך", list(VIEWS), default="process", key="view", format_func=VIEWS.get, label_visibility="collapsed")
+
 _notice = st.session_state.pop("_notice", None)
 if _notice:
     st.info(_notice)
