@@ -114,7 +114,7 @@ CSS = """
   /* מרווחים */
   --sp-1: 4px; --sp-2: 8px; --sp-3: 12px; --sp-4: 16px; --sp-5: 24px; --sp-6: 32px;
   /* מדרג הגופן */
-  --fs-page: 1.32rem; --fs-section: 1.02rem; --fs-body: 0.92rem; --fs-label: 0.8rem; --fs-cap: 0.78rem;
+  --fs-hero: 1.55rem; --fs-page: 1.32rem; --fs-section: 1.02rem; --fs-body: 0.92rem; --fs-label: 0.8rem; --fs-cap: 0.78rem;
   --lh-tight: 1.25; --lh-body: 1.6;
   /* נייטרלי: טקסט, משטחים, קווים (ink-2 / ink-3 נבדקו ל-4.5:1 לפחות מול --wash, הרקע הכהה ביותר שיש) */
   --ink: #1C2321; --ink-2: #3D4945; --ink-3: #5A655F;
@@ -156,11 +156,25 @@ code {font-family: 'IBM Plex Mono', monospace !important; direction: ltr; unicod
 /* ============================================================
    3. טיפוגרפיה של הממשק: כותרת הדף, כותרת מקטע, שורה שקטה
    ============================================================ */
-.lab-header {display: flex; align-items: baseline; gap: var(--sp-3); flex-wrap: wrap; border-right: 3px solid var(--accent);
-      padding: 0 var(--sp-3) 0 0; margin: 0 0 var(--sp-1);}
-.lab-header .title {font-size: var(--fs-page); font-weight: 700; color: var(--ink); line-height: var(--lh-tight);}
-.lab-header .org {font-size: var(--fs-label); font-weight: 500; color: var(--accent);}
-.lab-subtitle {font-size: var(--fs-cap); color: var(--ink-3); margin: 0 0 var(--sp-3);}
+/* באנר הפתיחה: כרטיס רשמי אחד ברוחב מלא (כרוחב הטבלה למטה), עם מקום שמור ללוגו המשרד/המעבדה בצד הנגדי לטקסט
+   (RTL: הטקסט מימין, הסמלים משמאל). width: 100% + box-sizing מפורשים כדי שהריפוד לא יצמצם את הרוחב בפועל.
+   שורות הטקסט ב-white-space: nowrap + ellipsis: בלי זה, hero-content (שכן ליד hero-badges קבועת-רוחב בתוך flex)
+   יכול להתכווץ מתחת לרוחב התוכן הטבעי שלו ולשבור כל מילה לשורה/תו משלה - זה היה הבאג (טקסט "מרוסק" בצד ימין). */
+.hero-banner {display: flex; align-items: center; justify-content: space-between; gap: var(--sp-5); flex-wrap: wrap;
+      width: 100%; box-sizing: border-box;
+      background: linear-gradient(135deg, var(--paper) 0%, var(--accent-soft) 100%); border: 1px solid var(--line);
+      border-right: 4px solid var(--accent); border-radius: var(--radius); box-shadow: var(--shadow-lift);
+      padding: var(--sp-4) var(--sp-5); margin: var(--sp-1) 0 var(--sp-3);}
+.hero-content {flex: 1 1 auto; min-width: 260px; overflow: hidden;}
+.hero-eyebrow, .hero-title, .hero-subtitle {white-space: nowrap; overflow: hidden; text-overflow: ellipsis;}
+.hero-eyebrow {font-size: var(--fs-label); font-weight: 600; letter-spacing: .02em; color: var(--accent-ink); margin: 0 0 2px;}
+.hero-title {font-size: var(--fs-hero); font-weight: 800; color: var(--ink); line-height: var(--lh-tight); margin: 0 0 6px;}
+.hero-subtitle {font-size: var(--fs-cap); color: var(--ink-3);}
+.hero-badges {display: flex; align-items: center; gap: var(--sp-2); flex-shrink: 0;}
+/* מקום שמור ללוגו רשמי (לא לוגו בפועל): תווית כוללת בלבד, לא חותמת מדומה */
+.hero-badge {display: flex; align-items: center; justify-content: center; min-width: 78px; height: 48px; padding: 0 var(--sp-2);
+      border: 1.5px dashed var(--accent-line); border-radius: var(--radius-sm); background: var(--paper);
+      font-size: var(--fs-cap); font-weight: 600; color: var(--accent-muted); text-align: center; line-height: 1.15; flex-shrink: 0;}
 .sec {display: flex; align-items: baseline; gap: var(--sp-2); margin: var(--sp-1) 0 var(--sp-2);}
 .sec-title {font-size: var(--fs-section); font-weight: 600; color: var(--ink);}
 .sec-hint {font-size: var(--fs-cap); color: var(--ink-3);}

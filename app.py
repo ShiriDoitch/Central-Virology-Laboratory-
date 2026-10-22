@@ -543,9 +543,14 @@ def share(n: int, total: int) -> str:
 # ---------- דף ----------
 
 st.markdown(
-    "<div class='lab-header'><div class='title'>חילוץ טפסי התחייבות</div>"
-    "<div class='org'>המעבדה המרכזית לנגיפים</div></div>"
-    "<div class='lab-subtitle'>שורה אחת לכל התחייבות</div>",     # משמעות הצבעים: במקרא שמתחת לטבלה
+    "<div class='hero-banner'>"
+    "<div class='hero-content'>"
+    "<div class='hero-eyebrow'>משרד הבריאות · המעבדה המרכזית לנגיפים</div>"
+    "<div class='hero-title'>מערכת חילוץ ובקרת טפסי התחייבות</div>"
+    "<div class='hero-subtitle'>שורה אחת לכל התחייבות · בקרת נתונים אוטומטית</div>"      # משמעות הצבעים: במקרא שמתחת לטבלה
+    "</div>"
+    "<div class='hero-badges'><div class='hero-badge'>משרד<br>הבריאות</div><div class='hero-badge'>המעבדה<br>המרכזית</div></div>"
+    "</div>",
     unsafe_allow_html=True,
 )
 
