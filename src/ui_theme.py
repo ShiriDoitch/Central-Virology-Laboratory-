@@ -432,9 +432,11 @@ button[data-testid^="stBaseButton-"]:focus-visible, button[data-testid="stPopove
 .st-key-rec_pager {border-top: 1px solid var(--line); padding-top: var(--sp-2) !important; margin-top: 2px;}
 .st-key-rec_pager [data-baseweb="input"], .st-key-rec_pager [data-baseweb="select"] > div {min-height: 2rem;}
 .st-key-rec_pager .stNumberInput, .st-key-rec_pager .stSelectbox {max-width: 190px;}
-/* תפריט הייצוא: שלוש אפשרויות בעמודה אחת, בלי שלושה כפתורים על המסך */
-[data-testid="stPopoverBody"] .stDownloadButton > button {min-height: 2rem; margin-bottom: var(--sp-1);}
 [data-testid="stPopoverBody"] {min-width: 240px;}
+/* כרטיס הייצוא: הצהרה, בחירת פורמט וכפתור ההורדה הראשי במרכז הכרטיס, ברוחב קריאה (לא נמתח לכל הכרטיס) */
+.st-key-rec_export_body {max-width: 360px; margin: 0 auto; text-align: center;}
+.export-statement {font-size: var(--fs-section); font-weight: 600; color: var(--ink); margin: 0 0 var(--sp-3);}
+.st-key-rec_export_body [data-testid="stSegmentedControl"] {display: flex; justify-content: center; margin-bottom: var(--sp-3);}
 /* כרטיס הרשומה: סרגל פעולות אחד בראש, ואז הכותרת והשדות */
 .st-key-rec_detail {background: var(--paper) !important; border: 1px solid var(--line) !important; border-top: 3px solid var(--accent) !important;
       border-radius: var(--radius) !important; box-shadow: var(--shadow-lift); padding: var(--sp-4) var(--sp-5) var(--sp-5) !important;

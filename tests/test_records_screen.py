@@ -126,9 +126,15 @@ def test_invalid_edit_shows_error_and_writes_nothing(seeded):
     assert any("לא תקין" in e.value for e in at.error)
 
 
-def test_screen_offers_three_downloads(seeded):
+def test_export_card_builds_only_the_selected_format(seeded):
+    """כפתור הורדה ראשי אחד ("הורדת קובץ"), לא שלושה; Excel כברירת מחדל; מעבר פורמט מחליף את קובץ ההורדה
+    בלי לבנות את שלושתם בכל ריצה (מפתח הכפתור כולל את הפורמט, ולכן יש רק מפתח אחד פעיל בכל רגע)."""
     at = records_app()
     at.run()
     assert not at.exception
-    labels = [b.proto.label for b in at.get("download_button")]
-    assert labels == ["Excel", "CSV", "JSON"]
+    buttons = at.get("download_button")
+    assert [b.proto.label for b in buttons] == ["הורדת קובץ"]
+    assert buttons[0].key == "rec_dl_xlsx"                              # Excel הוא ברירת המחדל
+    at.segmented_control(key="rec_export_fmt").set_value("csv").run()
+    buttons = at.get("download_button")
+    assert [b.proto.label for b in buttons] == ["הורדת קובץ"] and buttons[0].key == "rec_dl_csv"

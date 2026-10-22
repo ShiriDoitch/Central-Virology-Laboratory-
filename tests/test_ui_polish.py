@@ -389,3 +389,36 @@ def test_the_pager_row_is_labelled_as_a_paging_group(db):
     seed(db, {n: [cells()] for n in range(1, 4)})
     body = "\n".join(m.value for m in records_app().markdown if not m.value.startswith("<style>"))
     assert "class='group-label'" in body and ">עימוד<" in body
+
+
+# ---------- כרטיס הייצוא: הצהרה אחת, Excel כברירת מחדל, כפתור הורדה ראשי אחד במרכז ----------
+
+def test_export_card_states_the_real_count_and_defaults_to_excel(db):
+    seed(db, {1: [cells()], 2: [cells()]})
+    at = records_app()
+    body = "\n".join(m.value for m in at.markdown if not m.value.startswith("<style>"))
+    assert "<p class='export-statement'>ייצוא <b>2</b> רשומות בסינון הנוכחי</p>" in body
+    fmt = at.segmented_control(key="rec_export_fmt")
+    assert fmt.value == "xlsx"
+    dl = next(b for b in at.get("download_button") if b.key == "rec_dl_xlsx")
+    assert dl.label == "הורדת קובץ" and dl.proto.type == "primary"
+
+
+def test_export_card_shows_a_short_message_when_nothing_matches_the_filter(db):
+    seed(db, {1: [cells()]})
+    at = records_app()
+    at.text_input(key="rec_search").set_value("no-such-value-zzz").run()
+    assert not at.exception
+    assert not at.get("download_button")
+    assert any("אין רשומות לייצוא בסינון הנוכחי" in m.value for m in at.markdown)
+
+
+def test_the_choose_a_row_hint_sits_under_the_records_card_not_the_export_card(db):
+    """הטקסט הוא שורה קריאה (לא st.caption) תחת כרטיס "רשומות", לא בתוך כרטיס "ייצוא"."""
+    seed(db, {1: [cells()]})
+    at = records_app()
+    markdowns = [m.value for m in at.markdown if not m.value.startswith("<style>")]
+    hint_i = next(i for i, m in enumerate(markdowns) if "בחירת שורה בטבלה פותחת אותה לתיקון ולאישור" in m)
+    records_i = next(i for i, m in enumerate(markdowns) if "<span class='sec-title'>רשומות</span>" in m)
+    export_i = next(i for i, m in enumerate(markdowns) if "<span class='sec-title'>ייצוא</span>" in m)
+    assert records_i < hint_i < export_i

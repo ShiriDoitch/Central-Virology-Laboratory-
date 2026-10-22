@@ -411,17 +411,28 @@ def render_detail(conn, rid: int, he_flag) -> None:
                 st.caption("אין שינויים.")
 
 
+EXPORT_FORMATS = (("xlsx", "Excel"), ("csv", "CSV"), ("json", "JSON"))
+EXPORT_FORMAT_LABEL = dict(EXPORT_FORMATS)
+EXPORT_DEFAULT_FORMAT = "xlsx"
+
+
 def render_export(conn, flt: service.RecordFilter, total: int) -> None:
-    """ייצוא כל הרשומות שבסינון, מקובץ בתפריט אחד (Excel / CSV / JSON)."""
-    with st.popover("ייצוא · כל הרשומות בסינון", disabled=total == 0):
-        st.markdown(ui.quiet(f"<b>{total}</b> רשומות מתאימות לסינון הפעיל. בחירת פורמט:"), unsafe_allow_html=True)
-        for fmt, label in (("xlsx", "Excel"), ("csv", "CSV"), ("json", "JSON")):
-            try:
-                data, mime, name = service.export_records(conn, flt, fmt)
-                st.download_button(label, data, file_name=name, mime=mime, key=f"rec_dl_{fmt}", disabled=total == 0, width="stretch")
-            except Exception as e:
-                log_server_error("export_records", e)
-                st.caption(f"ייצוא {label} נכשל")
+    """ייצוא כל הרשומות שבסינון: הצהרה אחת מה מיוצא, בחירת פורמט (Excel כברירת מחדל) וכפתור הורדה ראשי אחד,
+    הכול במרכז הכרטיס. בונה קובץ רק לפורמט הנבחר (לא שלושה פורמטים בכל ריצה)."""
+    if total == 0:
+        st.markdown(ui.quiet("אין רשומות לייצוא בסינון הנוכחי."), unsafe_allow_html=True)
+        return
+    with st.container(key="rec_export_body"):
+        st.markdown(f"<p class='export-statement'>ייצוא <b>{total}</b> רשומות בסינון הנוכחי</p>", unsafe_allow_html=True)
+        fmt = st.segmented_control("פורמט הקובץ", [f for f, _ in EXPORT_FORMATS], default=EXPORT_DEFAULT_FORMAT,
+                                   format_func=EXPORT_FORMAT_LABEL.get, key="rec_export_fmt", label_visibility="collapsed")
+        fmt = fmt or EXPORT_DEFAULT_FORMAT
+        try:
+            data, mime, name = service.export_records(conn, flt, fmt)
+            st.download_button("הורדת קובץ", data, file_name=name, mime=mime, key=f"rec_dl_{fmt}", type="primary", width="stretch")
+        except Exception as e:
+            log_server_error("export_records", e)
+            st.error(f"ייצוא {EXPORT_FORMAT_LABEL[fmt]} נכשל (פרטים במסוף השרת).")
 
 
 WIPE_SESSION_KEYS = ("rec_open", "selected_cell", "upload_id", "pages", "images", "field_crops", "name_overrides", "_rec_flt", "_rec_sig",
@@ -542,12 +553,12 @@ def _render_main(db, he_flag) -> None:
             page_col, size_col = st.columns([1, 1], vertical_alignment="center")
             page_col.number_input("עמוד", 1, pages_n, key="rec_page")
             size_col.selectbox("שורות בעמוד", PAGE_SIZES, index=PAGE_SIZES.index(size), key="rec_size")
-    if not selected_id:
-        selected_id = st.session_state.get("rec_open")                  # רשומה שנפתחה (הבאה בתור / אחרי אישור), גם אם הסינון מסתיר אותה
+        if not selected_id:
+            selected_id = st.session_state.get("rec_open")              # רשומה שנפתחה (הבאה בתור / אחרי אישור), גם אם הסינון מסתיר אותה
+        if not selected_id:
+            st.markdown("בחירת שורה בטבלה פותחת אותה לתיקון ולאישור.")
     with st.container(border=True, key="rec_export_card"):
         st.markdown(ui.section("ייצוא"), unsafe_allow_html=True)
         render_export(conn, flt, total)
-        if not selected_id:
-            st.markdown("בחירת שורה בטבלה פותחת אותה לתיקון ולאישור.")
     if selected_id:
         render_detail(conn, selected_id, he_flag)
