@@ -360,13 +360,13 @@ def test_close_button_is_a_small_icon_with_an_accessible_label(monkeypatch):
     assert close.proto.type == "tertiary"                          # לא ראשי ולא משני-כמו-פעולה
 
 
-# ---------- מסך הרשומות: ארבעה כרטיסים מכותרים (חיפוש וסינון / בדיקה / רשומות / ייצוא) ----------
+# ---------- מסך הרשומות: ארבעה כרטיסים מכותרים (חיפוש וסינון / בדיקה / רשומות / ייצוא נתונים מנוהל) ----------
 
 def test_records_screen_is_organized_into_four_titled_cards(db):
     seed(db, {1: [cells(id=ORANGE)], 2: [cells()]})
     at = records_app()
     body = "\n".join(m.value for m in at.markdown if not m.value.startswith("<style>"))
-    for title in ("חיפוש וסינון", "בדיקה", "רשומות", "ייצוא"):
+    for title in ("חיפוש וסינון", "בדיקה", "רשומות", "ייצוא נתונים מנוהל"):
         assert f"<span class='sec-title'>{title}</span>" in body, title
 
 
@@ -391,17 +391,18 @@ def test_the_pager_row_is_labelled_as_a_paging_group(db):
     assert "class='group-label'" in body and ">עימוד<" in body
 
 
-# ---------- כרטיס הייצוא: הצהרה אחת, Excel כברירת מחדל, כפתור הורדה ראשי אחד במרכז ----------
+# ---------- כרטיס הייצוא: תג משנה שקט, Excel כברירת מחדל, כפתור הורדה עם אייקון לצד בחירת הפורמט ----------
 
 def test_export_card_states_the_real_count_and_defaults_to_excel(db):
     seed(db, {1: [cells()], 2: [cells()]})
     at = records_app()
     body = "\n".join(m.value for m in at.markdown if not m.value.startswith("<style>"))
-    assert "<p class='export-statement'>ייצוא <b>2</b> רשומות בסינון הנוכחי</p>" in body
+    assert "<span class='export-badge'>ייצוא <b>2</b> רשומות בסינון הנוכחי</span>" in body
     fmt = at.segmented_control(key="rec_export_fmt")
     assert fmt.value == "xlsx"
     dl = next(b for b in at.get("download_button") if b.key == "rec_dl_xlsx")
-    assert dl.label == "הורדת קובץ" and dl.proto.type == "primary"
+    assert dl.label == "הורדת קובץ" and dl.proto.type == "primary" and dl.proto.icon == ":material/download:"
+    assert dl.proto.use_container_width is False                   # לא כפתור "ענק" נמתח (גודל לפי התוכן)
 
 
 def test_export_card_shows_a_short_message_when_nothing_matches_the_filter(db):
@@ -414,11 +415,11 @@ def test_export_card_shows_a_short_message_when_nothing_matches_the_filter(db):
 
 
 def test_the_choose_a_row_hint_sits_under_the_records_card_not_the_export_card(db):
-    """הטקסט הוא שורה קריאה (לא st.caption) תחת כרטיס "רשומות", לא בתוך כרטיס "ייצוא"."""
+    """הטקסט הוא שורה קריאה (לא st.caption) תחת כרטיס "רשומות", לא בתוך כרטיס הייצוא."""
     seed(db, {1: [cells()]})
     at = records_app()
     markdowns = [m.value for m in at.markdown if not m.value.startswith("<style>")]
     hint_i = next(i for i, m in enumerate(markdowns) if "בחירת שורה בטבלה פותחת אותה לתיקון ולאישור" in m)
     records_i = next(i for i, m in enumerate(markdowns) if "<span class='sec-title'>רשומות</span>" in m)
-    export_i = next(i for i, m in enumerate(markdowns) if "<span class='sec-title'>ייצוא</span>" in m)
+    export_i = next(i for i, m in enumerate(markdowns) if "<span class='sec-title'>ייצוא נתונים מנוהל</span>" in m)
     assert records_i < hint_i < export_i

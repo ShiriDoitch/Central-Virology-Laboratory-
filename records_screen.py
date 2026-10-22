@@ -417,22 +417,25 @@ EXPORT_DEFAULT_FORMAT = "xlsx"
 
 
 def render_export(conn, flt: service.RecordFilter, total: int) -> None:
-    """ייצוא כל הרשומות שבסינון: הצהרה אחת מה מיוצא, בחירת פורמט (Excel כברירת מחדל) וכפתור הורדה ראשי אחד,
-    הכול במרכז הכרטיס. בונה קובץ רק לפורמט הנבחר (לא שלושה פורמטים בכל ריצה)."""
+    """ייצוא כל הרשומות שבסינון: תג משנה שקט (כמה רשומות), ואז בחירת פורמט (גלולות, Excel כברירת מחדל) וכפתור
+    הורדה ראשי אחד זה לצד זה, במרכז הכרטיס. בונה קובץ רק לפורמט הנבחר (לא שלושה פורמטים בכל ריצה)."""
     if total == 0:
         st.markdown(ui.quiet("אין רשומות לייצוא בסינון הנוכחי."), unsafe_allow_html=True)
         return
     with st.container(key="rec_export_body"):
-        st.markdown(f"<p class='export-statement'>ייצוא <b>{total}</b> רשומות בסינון הנוכחי</p>", unsafe_allow_html=True)
-        fmt = st.segmented_control("פורמט הקובץ", [f for f, _ in EXPORT_FORMATS], default=EXPORT_DEFAULT_FORMAT,
-                                   format_func=EXPORT_FORMAT_LABEL.get, key="rec_export_fmt", label_visibility="collapsed")
-        fmt = fmt or EXPORT_DEFAULT_FORMAT
-        try:
-            data, mime, name = service.export_records(conn, flt, fmt)
-            st.download_button("הורדת קובץ", data, file_name=name, mime=mime, key=f"rec_dl_{fmt}", type="primary", width="stretch")
-        except Exception as e:
-            log_server_error("export_records", e)
-            st.error(f"ייצוא {EXPORT_FORMAT_LABEL[fmt]} נכשל (פרטים במסוף השרת).")
+        st.markdown(f"<span class='export-badge'>ייצוא <b>{total}</b> רשומות בסינון הנוכחי</span>", unsafe_allow_html=True)
+        with st.container(horizontal=True, gap="medium", key="rec_export_action",
+                          vertical_alignment="center", horizontal_alignment="center"):
+            fmt = st.segmented_control("פורמט הקובץ", [f for f, _ in EXPORT_FORMATS], default=EXPORT_DEFAULT_FORMAT,
+                                       format_func=EXPORT_FORMAT_LABEL.get, key="rec_export_fmt", label_visibility="collapsed")
+            fmt = fmt or EXPORT_DEFAULT_FORMAT
+            try:
+                data, mime, name = service.export_records(conn, flt, fmt)
+                st.download_button("הורדת קובץ", data, file_name=name, mime=mime, key=f"rec_dl_{fmt}", type="primary",
+                                   icon=":material/download:")
+            except Exception as e:
+                log_server_error("export_records", e)
+                st.error(f"ייצוא {EXPORT_FORMAT_LABEL[fmt]} נכשל (פרטים במסוף השרת).")
 
 
 WIPE_SESSION_KEYS = ("rec_open", "selected_cell", "upload_id", "pages", "images", "field_crops", "name_overrides", "_rec_flt", "_rec_sig",
@@ -558,7 +561,7 @@ def _render_main(db, he_flag) -> None:
         if not selected_id:
             st.markdown("בחירת שורה בטבלה פותחת אותה לתיקון ולאישור.")
     with st.container(border=True, key="rec_export_card"):
-        st.markdown(ui.section("ייצוא"), unsafe_allow_html=True)
+        st.markdown(ui.section("ייצוא נתונים מנוהל"), unsafe_allow_html=True)
         render_export(conn, flt, total)
     if selected_id:
         render_detail(conn, selected_id, he_flag)
