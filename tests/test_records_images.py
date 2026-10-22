@@ -43,10 +43,12 @@ def test_card_with_image_shows_zoomable_page_and_field_crops(seeded):
     assert not any(service.IMAGE_MISSING_TEXT in i.value for i in at.info)
     keys = {s.key for s in at.slider}
     assert f"rec_pagezoom_{rid}" in keys                                   # העמוד המלא, ניתן להגדלה
-    assert f"rec_zoom_{rid}_first_name" in keys and f"rec_zoom_{rid}_id" in keys      # חיתוך לשדה (אותו רכיב כמו במסך העיבוד)
-    assert f"rec_zoom_{rid}_sender" not in keys                            # לשולח אין אזור
+    assert f"rec_zoom_{rid}_id" in keys                 # חיתוך מאומת מקומית מול הברקוד (אותו רכיב כמו במסך העיבוד)
+    assert f"rec_zoom_{rid}_first_name" not in keys     # אין ברקוד לשם: אין אזור מאומת, רק העמוד המלא עם הערה
+    assert any("המיקום המדויק לא ידוע" in c.value for c in at.caption)
+    assert f"rec_zoom_{rid}_sender" not in keys                            # לשולח אין אזור כלל
     html = " ".join(m.value for m in at.markdown)
-    assert html.count("name-zoom") >= 3 and "data:image/jpeg;base64" in html
+    assert html.count("name-zoom") >= 2 and "data:image/jpeg;base64" in html
     at.slider(key=f"rec_pagezoom_{rid}").set_value(300).run()
     assert not at.exception and "data-width=\"2160\"" in " ".join(m.value for m in at.markdown)       # 720 * 300% בפיקסלים
 
@@ -96,4 +98,6 @@ def test_processing_screen_evidence_still_uses_the_shared_component():
         pytest.skip("needs the saved sample run")
     from tests.test_app_confirm import loaded_app
     at = loaded_app(5, 'ת"ז')
-    assert any(s.key == "zoom_5_patient" for s in at.slider)               # אותו מפתח סרגל כמו לפני ההפרדה לרכיב
+    # אין ברקוד שמאמת את הת"ז בעמוד הזה (CLAUDE.md סעיף 22): אין יותר חיתוך לא-מאומת, העמוד המלא עם ההערה הכללית
+    assert not any(s.key == "zoom_5_patient" for s in at.slider)
+    assert any("המיקום המדויק לא ידוע" in c.value for c in at.caption)

@@ -439,6 +439,8 @@ button[data-testid^="stBaseButton-"]:focus-visible, button[data-testid="stPopove
 .st-key-rv_actions [data-baseweb="input"] {border: 1px solid var(--line-2); background: var(--paper) !important;}
 .st-key-rv_actions .stTextInput input {font-size: var(--fs-section); height: 2.6rem; background: var(--paper) !important;}
 .st-key-rv_actions [data-testid="stForm"] {border: none; padding: 0;}
+/* "Press Enter to submit form" המובנה של Streamlit חופף את הערך המוקלד בשדה הבדיקה; Enter ממשיך לעבוד, רק הכיתוב מוסתר */
+.st-key-rv_actions [data-testid="InputInstructions"], .st-key-detail_actions [data-testid="InputInstructions"] {display: none !important;}
 .st-key-rv_chips .stButton > button {min-height: 2rem; padding: 2px var(--sp-4); border-radius: var(--radius-pill);
       background: var(--accent-soft); border-color: var(--accent-line); color: var(--accent-ink);}
 .st-key-rv_chips .stButton > button:hover {background: #DCE8EA;}

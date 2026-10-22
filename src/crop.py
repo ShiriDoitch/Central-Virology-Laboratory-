@@ -138,6 +138,40 @@ def expand_receipt_fractions(fractions: tuple[float, float, float, float], sides
     return (x0, y0, x1, y1)
 
 
+def rotate_fractions_cw(fr: tuple[float, float, float, float], degrees: int) -> tuple[float, float, float, float]:
+    """ממפה תיבת שברים (x0,y0,x1,y1) מהעמוד כפי שפוענח (בלי rotation.applied) לעמוד אחרי סיבוב בכיוון השעון
+    ב-degrees מעלות (0/90/180/270; אותה המרה כמו rotate_jpeg/render_region(rotation=)). משמש להצגת מיקום ברקוד
+    שפוענח ישירות מה-PDF המקורי, בלי קשר לסיבוב שהקוד מחיל לפני השליחה למודל."""
+    x0, y0, x1, y1 = fr
+    deg = degrees % 360
+    if deg == 0:
+        return (x0, y0, x1, y1)
+    if deg not in (90, 180, 270):
+        raise ValueError(f"unsupported rotation {degrees}")
+
+    def pt(x: float, y: float) -> tuple[float, float]:
+        if deg == 90:
+            return 1 - y, x
+        if deg == 180:
+            return 1 - x, 1 - y
+        return y, 1 - x        # 270
+
+    xa, ya = pt(x0, y0)
+    xb, yb = pt(x1, y1)
+    return (min(xa, xb), min(ya, yb), max(xa, xb), max(ya, yb))
+
+
+def pad_fractions(fr: tuple[float, float, float, float], margin: float, min_pad: float) -> tuple[float, float, float, float]:
+    """מוסיף שוליים לתיבת שברים קיימת (לא Box מנורמל): margin יחסי לגודל התיבה, לפחות min_pad מהעמוד. חלון שחורג
+    מהעמוד מוזז פנימה ולא נחתך (כמו review_fractions)."""
+    x0, y0, x1, y1 = fr
+    pad_x = max((x1 - x0) * margin, min_pad)
+    pad_y = max((y1 - y0) * margin, min_pad)
+    fx0, fx1 = _shift_into_page(x0 - pad_x, x1 + pad_x)
+    fy0, fy1 = _shift_into_page(y0 - pad_y, y1 + pad_y)
+    return (fx0, fy0, fx1, fy1)
+
+
 def crop_image(img: bytes, fractions: tuple[float, float, float, float], scale: float = 2.0, quality: int = 90) -> bytes:
     """לקלט שהוא תמונה (צילום) ולא PDF: חיתוך והגדלה עם Pillow."""
     im = Image.open(io.BytesIO(img)).convert("RGB")

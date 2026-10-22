@@ -130,7 +130,7 @@ def test_page_images_and_crops_come_back_after_a_refresh(db):
     page_store.write(store.upload_id, 1, image)
     repo.save_page_regions(db, store.upload_id, 1, {"id": [0.1, 0.2, 0.6, 0.3]})
     run = service.load_run(db, store.token)
-    assert run["images"] == {1: image} and (1, "patient") in run["field_crops"]
+    assert run["images"] == {1: image} and (1, "id") in run["field_crops"]
     at = app(store.token)
     assert not at.exception and at.session_state["images"] == {1: image}
 

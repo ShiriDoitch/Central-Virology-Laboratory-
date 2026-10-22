@@ -9,6 +9,7 @@ import pymupdf
 from PIL import Image, ImageOps
 
 from .confirm import FIELD_REGION, field_crop
+from .export import build_rows
 from .intake import pdf_to_images, rotate_jpeg
 from . import status
 from .privacy import log_server_error
@@ -98,9 +99,10 @@ def process_upload(name: str, data: bytes, progress, store=None, on_status=None)
             applied = (res.get("rotation") or {}).get("applied")
             images[p] = rotate_jpeg(img, applied) if applied else img
             if (res.get("pass1") or {}).get("ok"):
-                for region in dict.fromkeys(FIELD_REGION.values()):         # patient / barcode / commitment / receipt
-                    key = next(k for k, r in FIELD_REGION.items() if r == region)
-                    crops[(p, region)] = field_crop(tmp, res, key)
+                rows = build_rows(res)
+                values = {k: rows[0].cells[k].value for k in FIELD_REGION} if rows else {}
+                for key in FIELD_REGION:            # first_name / last_name / id / center / commitment / date
+                    crops[(p, key)] = field_crop(tmp, res, key, values.get(key))
         if store is not None:
             store.finish()
         progress.progress(1.0, text="הסתיים")

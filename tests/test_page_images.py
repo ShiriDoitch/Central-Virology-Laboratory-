@@ -15,6 +15,7 @@ SECRET_ID = "123456782"
 def page_result(page=1, n_rows=1):
     numbers = [{"value": str(107646 + i), "label": "התחייבות", "source": "printed", "confidence": 0.95} for i in range(n_rows)]
     return {"page": page, "boxes": {"patient": {"fractions": [0.1, 0.1, 0.9, 0.3]}},
+            "barcodes": [{"format": "Code128", "text": SECRET_ID, "box": [0.1, 0.1, 0.5, 0.15]}],   # מאמת מקומית את הת"ז בלבד
             "pass1": {"ok": True, "is_commitment_form": True, "page_quality": "ok", "numbers": numbers,
                       "id_numbers": [{"value": SECRET_ID, "label": "ת.ז", "source": "printed", "confidence": 0.99}]},
             "pass2": None}
@@ -61,7 +62,8 @@ def test_image_and_regions_written_on_persist(conn, tmp_path):
     img = Image.open(io.BytesIO(path.read_bytes()))
     assert img.size[0] > 100
     regions = repo.get_page_regions(conn, store.upload_id, 1)
-    assert regions["first_name"] == [0.1, 0.1, 0.9, 0.3] and regions["id"] == regions["first_name"]
+    assert regions["id"]                              # מאומת מקומית מול הברקוד (box שהמודל "הצהיר" לא נבדק יותר)
+    assert "first_name" not in regions                # אין ברקוד לשם: אין אזור מאומת, לא box לא-מאומת
 
 
 def test_paths_are_numeric_only_and_contain_no_name_or_id(conn, tmp_path):
@@ -165,7 +167,8 @@ def test_record_images_returns_crops_from_the_stored_image(conn, tmp_path):
     rid = first_ids(conn, store)[0]
     image, crops = service.record_images(conn, repo.get_record(conn, rid))
     assert image and set(crops) == {"first_name", "last_name", "id", "center", "date", "sender", "commitment"}
-    assert crops["first_name"] and Image.open(io.BytesIO(crops["first_name"])).size[0] > 50
+    assert crops["id"] and Image.open(io.BytesIO(crops["id"])).size[0] > 50       # מאומת מקומית מול הברקוד
+    assert crops["first_name"] is None                               # אין ברקוד לשם: אין אזור מאומת
     assert crops["sender"] is None                                   # אין אזור לשולח
 
 

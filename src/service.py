@@ -86,7 +86,9 @@ class Persister:
             if applied:
                 image = rotate_jpeg(image, applied)
             page_store.write(self.upload_id, page, image)
-            repo.save_page_regions(self.conn, self.upload_id, page, stored_field_fractions(page_result))
+            rows = machine_rows(page_result)
+            values = {k: rows[0].cells[k].value for k in FIELD_REGION} if rows else {}
+            repo.save_page_regions(self.conn, self.upload_id, page, stored_field_fractions(page_result, values))
             return True
         except Exception as e:                      # תמונה שלא נשמרה לא מונעת השלמת ההעלאה: הכרטיס יציג "אין תמונה שמורה"
             log_server_error(f"save page image {page}", e)
@@ -98,13 +100,18 @@ class Persister:
 
 
 def run_crops(conn, upload_id: int, page_no: int, image: bytes) -> dict:
-    """חיתוך לכל אזור בעמוד (patient / barcode / commitment / receipt) מתמונת העמוד השמורה, באותה לוגיקה
-    של כרטיס הרשומה. אחרי רענון אין יותר PDF זמני לחתוך ממנו, ולכן החיתוך נעשה מהתמונה."""
+    """חיתוך מאומת לכל שדה בעמוד מתמונת העמוד השמורה, באותה לוגיקה של כרטיס הרשומה. אחרי רענון אין יותר PDF זמני
+    לחתוך ממנו, ולכן החיתוך נעשה מהתמונה. מפתח = (עמוד, שדה): שדות שונים יכולים להיות מאומתים (או לא) בנפרד, גם אם
+    הם היו חולקים אזור אחד לפי המודל (למשל שם ות"ז)."""
     out: dict = {}
+    by_fractions: dict[tuple | None, bytes | None] = {}
     for key, fractions in (repo.get_page_regions(conn, upload_id, page_no) or {}).items():
-        region = FIELD_REGION.get(key)
-        if region and (page_no, region) not in out:
-            out[(page_no, region)] = field_crop_from_image(image, fractions)
+        if not FIELD_REGION.get(key):
+            continue
+        token = tuple(fractions) if fractions else None
+        if token not in by_fractions:
+            by_fractions[token] = field_crop_from_image(image, fractions)
+        out[(page_no, key)] = by_fractions[token]
     return out
 
 

@@ -4,7 +4,8 @@ import base64
 import html
 import re
 
-from .crop import REVIEW_MAX_GROW, choose_box, crop_image, edges_touching_ink, expand_receipt_fractions, region_fractions, review_fractions
+from .crop import (BARCODE_MIN_PAD, MARGINS, REVIEW_MAX_GROW, choose_box, crop_image, edges_touching_ink, expand_receipt_fractions,
+                   pad_fractions, region_fractions, review_fractions, rotate_fractions_cw)
 from .export import COMMITMENT_ROW_KEY, FIELD_KEYS, NAME_KEYS, Cell
 from .intake import render_region
 from .rules import normalize_date
@@ -66,10 +67,18 @@ def name_suggestions(cell: Cell, key: str | None = None) -> list[str]:
     return out
 
 
-# איזה אזור מהעמוד מציגים לכל שדה: שורת המטופל (שמות, ת"ז), אזור הברקוד (מרכזי), אזור ההתחייבות, אזור הקבלה (תאריך; רק אם המודל
-# החזיר receipt_box, אחרת העמוד המלא); שולח: אין חיתוך
+# לאיזה שדה יש מושג "אזור בטופס" בכלל (ולכן נסיון אימות, אחרת העמוד המלא בלי שום ניסיון): שמות ות"ז, מרכזי, התחייבות,
+# תאריך. שולח: אין אזור, אין נסיון אימות, ואין שינוי בהודעה הקיימת ("אין חיתוך זמין לשדה הזה").
 FIELD_REGION = {"first_name": "patient", "last_name": "patient", "id": "patient", "center": "barcode", "commitment": "commitment",
                 "date": "receipt"}
+
+# ראיה שלא אומתה מקומית לעולם לא מוצגת כסימון/חיתוך (CLAUDE.md: "המודל מתאר, הקוד מחליט" חל גם על תצוגת הראיה):
+# box שהמודל "הצהיר" עליו (patient_box / barcode_box / commitment_box / receipt_box) יכול להצביע על מקום שגוי בעמוד
+# (למשל ברקוד אחר), והבודקת מאשרת לפי התמונה - תמונה שגויה גרועה מהיעדר תמונה. האימות היחיד שיש היום: מספר שפוענח
+# מקומית מברקוד (src/barcode.py, בלי API) ושווה בדיוק לערך שהוחלט; אין עוד הסתמכות על ה-box של המודל לתצוגה (pipeline.py
+# עדיין משתמש בו לחיתוך שנשלח למעבר השני - זה לא השתנה). ערך שלא נמצא בשום ברקוד: בלי חיתוך, בלי סימון, העמוד המלא
+# עם ההערה NOT_VERIFIED_NOTE.
+NOT_VERIFIED_NOTE = "המיקום המדויק לא ידוע, יש לחפש בטופס"
 
 
 def override_key(key: str, row_index: int = 0) -> str:
@@ -77,19 +86,42 @@ def override_key(key: str, row_index: int = 0) -> str:
     return COMMITMENT_ROW_KEY.format(row_index) if key == "commitment" else key
 
 
-def field_fractions(page_res: dict, key: str) -> tuple[float, float, float, float] | None:
-    region = FIELD_REGION.get(key)
-    if region == "patient":
-        return name_row_fractions(page_res)
-    used = ((page_res.get("boxes") or {}).get(region) or {}) if region else {}
-    return tuple(used["fractions"]) if used.get("fractions") else None
+def verified_barcode_box(barcodes: list[dict] | None, applied_rotation: int, value: str | None) -> tuple[float, float, float, float] | None:
+    """תיבת השברים המאומתת מקומית לערך (אחרי הסיבוב שהוחל על העמוד): כל חלקי value (אם כמה, מחוברים ב-" ; ") הם הטקסט
+    שפוענח מברקוד שהמיקום שלו ידוע (src/barcode.py). None = אין ברקוד תואם לכל חלקי הערך (או שאין ברקודים/ערך כלל)."""
+    value = (value or "").strip()
+    if not value or not barcodes:
+        return None
+    parts = [p for p in value.split(" ; ") if p]
+    if not parts:
+        return None
+    boxes = []
+    for part in parts:
+        box = next((b.get("box") for b in barcodes if b.get("box") and (b.get("text") or "").strip() == part), None)
+        if not box:
+            return None
+        boxes.append(box)
+    x0, y0 = min(b[0] for b in boxes), min(b[1] for b in boxes)
+    x1, y1 = max(b[2] for b in boxes), max(b[3] for b in boxes)
+    rotated = rotate_fractions_cw((x0, y0, x1, y1), applied_rotation or 0)
+    return pad_fractions(rotated, margin=MARGINS["barcode"], min_pad=BARCODE_MIN_PAD)
 
 
-def field_crop(pdf_path: str, page_res: dict, key: str) -> bytes | None:
-    """JPEG של האזור שממנו נקרא השדה, מרונדר מחדש מה-PDF הנקי ברזולוציה גבוהה, עם אותו סיבוב שהוחל על העמוד.
-    None = אין אזור לשדה הזה (תאריך, שולח) או שהרינדור נכשל: המסך מציג את העמוד המלא."""
+def field_fractions(page_res: dict, key: str, value: str | None = None) -> tuple[float, float, float, float] | None:
+    """האזור המאומת מקומית לשדה (ראו verified_barcode_box), או None: לשדה הזה אין מושג אזור כלל (FIELD_REGION), או
+    שאין אימות מקומי לערך שהוחלט (גם אם למודל "יש box" - הוא לא נבדק ולא מוצג). value = הערך שהוחלט לשדה; None = בלי
+    ניסיון אימות (למשל כש-value עדיין לא ידוע בנקודה הזאת)."""
+    if not FIELD_REGION.get(key):
+        return None
+    applied = (page_res.get("rotation") or {}).get("applied") or 0
+    return verified_barcode_box(page_res.get("barcodes"), applied, value)
+
+
+def field_crop(pdf_path: str, page_res: dict, key: str, value: str | None = None) -> bytes | None:
+    """JPEG של האזור המאומת שממנו נקרא השדה, מרונדר מחדש מה-PDF הנקי ברזולוציה גבוהה, עם אותו סיבוב שהוחל על העמוד.
+    None = אין אזור מאומת לשדה הזה: המסך מציג את העמוד המלא, בלי סימון שלא אומת."""
     try:
-        fr = field_fractions(page_res, key)
+        fr = field_fractions(page_res, key, value)
         if not fr:
             return None
         applied = (page_res.get("rotation") or {}).get("applied") or 0
@@ -116,12 +148,16 @@ def review_crop(render, fr: tuple[float, float, float, float]) -> bytes:
     return jpeg
 
 
-def stored_field_fractions(page_res: dict) -> dict[str, list[float]]:
-    """אזור כל שדה (שברים 0..1 של העמוד אחרי הסיבוב) לשמירה לצד תמונת העמוד. שדה בלי אזור (שולח) לא נכלל."""
+def stored_field_fractions(page_res: dict, values: dict[str, str | None] | None = None) -> dict[str, list[float]]:
+    """אזור מאומת מקומית לכל שדה (שברים 0..1 של העמוד אחרי הסיבוב), לשמירה לצד תמונת העמוד: ראיה לכרטיס הרשומה ולמסך
+    הבדיקה המונחית אחרי רענון, בלי PDF זמין (אין יותר מעבר על box שהמודל דיווח). שדה בלי אימות לא נכלל (ולא רק שולח/תאריך).
+    values = הערך שהוחלט לכל שדה (בעמוד עם כמה התחייבויות: הערך של השורה הראשונה - מרכזי ופרטי המטופל משותפים לכל השורות
+    באותו עמוד; מגבלה ידועה לגבי התחייבות עצמה, שכבר הייתה קיימת: אזור אחד נשמר לעמוד, לא לפי שורה)."""
+    values = values or {}
     out = {}
     for key in FIELD_REGION:
         try:
-            fr = field_fractions(page_res, key)
+            fr = field_fractions(page_res, key, values.get(key))
         except Exception:
             fr = None
         if fr:

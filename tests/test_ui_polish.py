@@ -266,6 +266,17 @@ def test_raw_model_readings_are_a_dev_tool_only(tmp_path, monkeypatch):
     assert labels, "שאר המרחיבים במסך נשארים"
 
 
+def test_input_instructions_overlay_is_hidden_in_the_manual_value_forms():
+    """"Press Enter to submit form" המובנה של Streamlit חופף את הערך המוקלד בשדה ההקלדה הידנית (כרטיס הבדיקה
+    במסך העיבוד, ובדיקה במבט אחד); מוסתר ב-CSS מבני על ה-test-id שלו, בלי לפגוע ב-Enter עצמו (זה כלל תצוגה, לא לוגיקה)."""
+    rules = {sel.strip(): body for sel, body in
+             [(m.group(1), m.group(2)) for m in re.finditer(r"([^{}]+)\{([^}]*)\}", re.sub(r"/\*.*?\*/", "", ui.CSS, flags=re.S))]
+             if "InputInstructions" in sel}
+    assert rules
+    assert all("display: none" in body for body in rules.values())
+    assert any("rv_actions" in sel for sel in rules) and any("detail_actions" in sel for sel in rules)
+
+
 # ---------- 2: פס ההתקדמות מתמלא מימין לשמאל ----------
 
 PROGRESS_RULES = {sel.strip(): body for sel, body in
