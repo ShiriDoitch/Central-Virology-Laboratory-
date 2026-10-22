@@ -60,6 +60,17 @@ def field_row(label: str, value: str | None, state: str, mono: bool = False, emp
             f"<div class='ro-value{' mono' if mono else ''}'>{shown}</div>{dot(state)}</div>")
 
 
+def status_pill(kind: str, text: str) -> str:
+    """פס מצב קריא מעל כפתור אישור השורה (לא תג קטן): כתום כל עוד נשארו שדות לבדיקה, ירוק כשאין.
+    גופן גוף רגיל; הניגודיות לפי אותם אסימוני מצב של src/export.py (נבדקת ב-tests/test_ui_contrast.py)."""
+    return f"<div class='row-check {html.escape(kind)}'>{html.escape(text)}</div>"
+
+
+def confirm_status(value) -> str:
+    """שורת הסטטוס של ערך שאושר על ידי המשתמש בכרטיס הבדיקה: קו אחד ("✓ אושר: ..."), לא כפתור-שהוא-תג."""
+    return f"<div class='confirm-status'>✓ אושר: {html.escape(str(value))}</div>"
+
+
 def field_head(label: str, state: str) -> str:
     """ראש שדה שניתן לעריכה: התווית מימין, נקודת המצב + המילה משמאל, ומתחתיהן שדה הקלט."""
     return f"<div class='fld-head'><span class='ro-label'>{html.escape(label)}</span>{dot(state)}</div>"
@@ -223,6 +234,16 @@ code {font-family: 'IBM Plex Mono', monospace !important; direction: ltr; unicod
 .fld-head {display: flex; align-items: baseline; justify-content: space-between; gap: var(--sp-2); margin: 0 0 2px;}
 .flag {display: inline-flex; align-items: center; gap: 6px; margin: 2px 0 2px 6px; padding: 2px 10px; border-radius: var(--radius-pill);
       color: var(--orange-ink); background: var(--orange-fill); border: 1px solid var(--orange-line); font-size: var(--fs-cap);}
+/* פס מצב קריא מעל כפתור אישור השורה: גופן גוף (לא הערה קטנה), כך שהמצב ("נותרו N שדות לבדיקה" / "כל השדות נבדקו")
+   בולט ולא נבלע כטקסט אפור קטן מתחת לכפתור */
+.row-check {display: block; font-size: var(--fs-body); font-weight: 600; text-align: center; border-radius: var(--radius-sm);
+      padding: 7px var(--sp-3); margin-bottom: var(--sp-2);}
+.row-check.warn {color: var(--orange-ink); background: var(--orange-fill); border: 1px solid var(--orange-line);}
+.row-check.ok {color: var(--green-ink); background: var(--green-fill); border: 1px solid var(--green-line);}
+/* שורת סטטוס "אושר על ידי המשתמש" בכרטיס הבדיקה: קו אחד במקום כפתור-שהוא-תג, אותו גוון כמו תג "אושר ידנית" */
+.confirm-status {display: flex; align-items: center; gap: var(--sp-2); font-size: var(--fs-body); font-weight: 600;
+      color: var(--confirmed-ink); background: var(--confirmed-fill); border: 1px solid var(--confirmed-line);
+      border-radius: var(--radius-sm); padding: var(--sp-2) var(--sp-3); margin-bottom: var(--sp-2);}
 
 /* ============================================================
    5. פקדים: כפתורים, שדות קלט, העלאה, הודעות
@@ -432,6 +453,11 @@ button[data-testid^="stBaseButton-"]:focus-visible, button[data-testid="stPopove
 .panel-head .ph-eyebrow {font-size: var(--fs-cap); color: var(--ink-3);}
 .panel-head .ph-title {font-size: var(--fs-section); font-weight: 600; color: var(--ink); line-height: var(--lh-tight);}
 .panel-rule {height: 1px; background: var(--line); margin: var(--sp-1) 0 var(--sp-2);}
+/* כפתור סגירת כרטיס הבדיקה: סמל קטן (✕) בפינה, לא פעולה ראשית - גובה נוח ללחיצה בלי רוחב מלא */
+.st-key-close_detail button {min-height: 2.1rem; padding: 2px var(--sp-3); font-size: var(--fs-section); line-height: 1;}
+/* הכרטיס המוביל (CTA) להתחלת הבדיקה המודרכת ממסך העיבוד: בולט אך לא "כתום-אזהרה" - גוון המותג */
+.st-key-guided_cta {background: var(--accent-soft) !important; border: 1px solid var(--accent-line) !important;
+      border-radius: var(--radius) !important; padding: var(--sp-3) var(--sp-4) !important; margin-bottom: var(--sp-2);}
 .st-key-detail_actions {background: #FCFBF8 !important; border: 1px solid var(--line) !important; border-radius: var(--radius) !important;
       padding: var(--sp-3) var(--sp-4) var(--sp-4) !important; position: sticky; top: 128px; z-index: 5;}
 .st-key-detail_actions [data-testid="stVerticalBlock"] {gap: var(--sp-2);}

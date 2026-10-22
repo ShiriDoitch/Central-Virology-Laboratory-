@@ -49,16 +49,18 @@ def test_suggestion_exists_only_where_two_readings_agree_and_clicking_saves_it()
     button(at, keys[0]).click().run()
     assert not at.exception
     assert at.session_state["name_overrides"] == {(12, "first_name"): "ישראל"}
-    assert any("אושר על ידי המשתמש: ישראל" in s.value for s in at.success)
-    assert at.text_input(key="txt_12_first_name").value == "ישראל"
+    assert any("✓ אושר: ישראל" in m.value for m in at.markdown)
 
 
 def test_typed_value_is_saved_and_can_be_cleared():
-    """ההקלדה יושבת בטופס: Enter (או הכפתור) שולח אותו, ולכן הערך נקבע ונשלח באותה ריצה."""
+    """ההקלדה יושבת בטופס: Enter (או הכפתור) שולח אותו, ולכן הערך נקבע ונשלח באותה ריצה. אישור מזניק
+    אוטומטית לתא הבא שדורש בדיקה, ולכן חוזרים לבחור את השדה הזה במפורש לפני הביטול."""
     at = loaded_app(1)
     at.text_input(key="txt_1_first_name").set_value("  ישראל ")
     button(at, "ok_1_first_name").click().run()
     assert at.session_state["name_overrides"] == {(1, "first_name"): "ישראל"}
+    at.session_state["selected_cell"] = (row_of(1), "שם פרטי")
+    at.run()
     button(at, "clr_1_first_name").click().run()
     assert at.session_state["name_overrides"] == {}
 
@@ -82,8 +84,8 @@ def test_center_cell_shows_candidates_as_buttons_and_clicking_confirms_all_field
     assert keys, "candidates should be buttons"
     button(at, keys[0]).click().run()
     assert not at.exception
-    assert at.session_state["name_overrides"][(14, "center")] == at.text_input(key="txt_14_center").value
-    assert any("אושר על ידי המשתמש" in s.value for s in at.success)
+    center_value = at.session_state["name_overrides"][(14, "center")]
+    assert any(f"✓ אושר: {center_value}" in m.value for m in at.markdown)
     button(at, "clr_14_center").click().run()
     assert at.session_state["name_overrides"] == {}
 

@@ -14,6 +14,7 @@ from src.confirm import APPROX_NOTE, FIELD_REGION, INPUT_HINTS, NOT_VERIFIED_NOT
 from src.export import COLUMNS, CONFIRMED, FIELD_KEYS, GREEN, ORANGE, YELLOW, _readings, build_rows, build_workbook, pass2_issues, skip_reason
 import evidence_view
 import records_screen
+import review_screen
 from src import service
 from src import ui_theme as ui
 from src import ui_text
@@ -347,6 +348,22 @@ def already_confirmed(page: int, okey: str, text: str | None) -> bool:
     return typed == saved or (saved is not None and typed == st.session_state.get(f"done_{page}_{okey}"))
 
 
+def _advance_after_confirm(page: int, okey: str) -> None:
+    """אחרי אישור ערך ב-Enter בכרטיס הבדיקה: מעבר אוטומטי לתא הבא שדורש בדיקה, כמו בבדיקה המודרכת (בלי צורך
+    בכפתור "בדיקה הבאה"; הכפתור נשאר כגיבוי). בלי תא נוסף: הכרטיס נשאר על התא הנוכחי, שאושר ולכן ירוק/כחול."""
+    pages = st.session_state.get("pages")
+    key = okey.split("#")[0]
+    if not pages or key not in TITLES:
+        return
+    df_, colors_, export_rows_ = table_data(pages, st.session_state.get("name_overrides", {}))
+    row_i = next((i for i, (p, er) in enumerate(export_rows_) if p["page"] == page and override_key(key, er.index) == okey), None)
+    if row_i is None:
+        return
+    nxt = next_attention_cell(colors_, list(df_.index), (row_i, TITLES[key]))
+    if nxt:
+        _select(nxt)
+
+
 def _confirm_typed(page: int, okey: str) -> None:
     text = st.session_state.get(f"txt_{page}_{okey}", "")
     if already_confirmed(page, okey, text):
@@ -355,6 +372,7 @@ def _confirm_typed(page: int, okey: str) -> None:
         if _apply(page, okey, text):
             st.session_state[f"txt_{page}_{okey}"] = st.session_state["name_overrides"].get((page, okey), "")
             st.session_state[f"done_{page}_{okey}"] = st.session_state["name_overrides"].get((page, okey))   # נעילה עד סוף הריצה
+            _advance_after_confirm(page, okey)
         st.session_state.pop(f"err_{page}_{okey}", None)
     except ValueError:
         st.session_state[f"err_{page}_{okey}"] = True      # ערך לא תקין לשדה: האישור הקודם לא משתנה
@@ -420,7 +438,7 @@ def render_evidence(page_res: dict, er, key: str, image: bytes | None) -> None:
         st.markdown(f"**נקרא (raw):** {code(cell.raw)}")
     if cell.flags:
         st.markdown("**לבדיקה:** " + flag_chips_html(he_flag(f, key) for f in cell.flags), unsafe_allow_html=True)
-    else:
+    elif not cell.confirmed:          # ערך שאושר על ידי המשתמש כבר לא נושא דגלים: "אין מה לבדוק" סותר את מצב האישור
         st.markdown("**לבדיקה:** אין")
     if cell.alternatives and key not in NAME_KEYS:
         label = "מועמדים שנמצאו (התא ריק)" if not cell.value else "חלופות"
@@ -436,7 +454,9 @@ def render_evidence(page_res: dict, er, key: str, image: bytes | None) -> None:
 
 def render_confirmation(page_res: dict, er, key: str, locked: bool = False) -> None:
     """צד הפעולות: מצב הערך, הצעות כלחצנים (גם כשהתא ריק), הקלדה חופשית וכפתורי האישור.
-    ערך שהוקלד או נבחר נשמר כערך סופי ומיוצא כ"אושר על ידי המשתמש" (כחול). בלי אישור, שם בכתב יד נשאר כתום."""
+    ערך שהוקלד או נבחר נשמר כערך סופי ומיוצא כ"אושר על ידי המשתמש" (כחול). בלי אישור, שם בכתב יד נשאר כתום.
+    ערך שכבר אושר ונשמר (לפי המסד, לא רק הסשן) מוצג כשורת סטטוס אחת וכפתור "ביטול אישור" בלבד: בלי טופס
+    הקלדה למעלה (היה כפתור-שהוא-תג, "הערך אושר") ובלי הבאנרים הסותרים ("לא נקרא, יש להקליד" על ערך שקיים)."""
     cell, page = er.cells[key], er.page
     okey = override_key(key, er.index)
     overrides = st.session_state.setdefault("name_overrides", {})
@@ -444,9 +464,16 @@ def render_confirmation(page_res: dict, er, key: str, locked: bool = False) -> N
     if locked or st.session_state.get(f"locked_{page}"):
         st.warning("השורה אושרה ולכן נעולה לשינוי. לתיקון יש לבטל קודם את אישור השורה (למעלה).")
         locked = True
-    if cell.confirmed:
-        st.success(f"אושר על ידי המשתמש: {md_text(cell.value)}")
-    elif cell.yellow:
+    txt_key = f"txt_{page}_{okey}"
+    hint = f" ({INPUT_HINTS[key]})" if key in INPUT_HINTS else ""
+    st.session_state.setdefault(txt_key, overrides.get((page, okey), ""))
+    already = already_confirmed(page, okey, st.session_state.get(txt_key))
+    if already:
+        shown_value = cell.value if cell.confirmed else saved_confirmed_value(page, okey)
+        st.markdown(ui.confirm_status(shown_value), unsafe_allow_html=True)
+        st.button("ביטול אישור", key=f"clr_{page}_{okey}", on_click=_clear, args=(page, okey), width="stretch", disabled=locked)
+        return
+    if cell.yellow:
         st.info(YELLOW_TEXT)
     elif cell.orange:
         st.warning("לא בטוח (כתום): " + (", ".join(md_text(he_flag(f, key)) for f in cell.flags) or "—"))
@@ -455,7 +482,7 @@ def render_confirmation(page_res: dict, er, key: str, locked: bool = False) -> N
     suggestions = name_suggestions(cell, key)
     if suggestions:
         st.markdown("**הצעות (לחיצה מאשרת):**")
-        if key == "id" and "id_checksum_failed" in cell.flags and not cell.confirmed:
+        if key == "id" and "id_checksum_failed" in cell.flags:
             st.caption("אחרי הערך שנקרא: החלפת ספרה אחת בזוגות מבולבלים שעוברת את ספרת הביקורת. אין תיקון אוטומטי.")
         with st.container(horizontal=True, gap="small", key="detail_suggest"):
             for i, sug in enumerate(suggestions):
@@ -465,23 +492,13 @@ def render_confirmation(page_res: dict, er, key: str, locked: bool = False) -> N
         st.warning(NOT_READ_TEXT)
     else:
         st.caption("אין הצעות לשדה הזה. אפשר להקליד ערך.")
-    txt_key = f"txt_{page}_{okey}"
-    hint = f" ({INPUT_HINTS[key]})" if key in INPUT_HINTS else ""
-    st.session_state.setdefault(txt_key, overrides.get((page, okey), ""))
-    already = already_confirmed(page, okey, st.session_state.get(txt_key))
-    # טופס, כדי ש-Enter בשדה יאשר את מה שהוקלד (והכפתור נשאר). הכפתור אינו מושבת כשהערך זהה לערך השמור,
-    # אחרת לא היה אפשר לאשר ערך חדש: הטקסט מגיע לשרת רק עם שליחת הטופס. אישור חוזר של אותו ערך לא כותב
-    # כלום (_confirm_typed יוצא מיד), והתווית אומרת שהערך כבר אושר.
+    # טופס, כדי ש-Enter בשדה יאשר את מה שהוקלד: הטקסט מגיע לשרת רק עם שליחת הטופס.
     with st.form(key=f"typed_{page}_{okey}", border=False, clear_on_submit=False):
         st.text_input("הקלדה ידנית" + hint, key=txt_key, disabled=locked)
         if st.session_state.get(f"err_{page}_{okey}"):
             st.error("הערך לא תקין לשדה הזה, לא נשמר" + hint)
-        st.form_submit_button("הערך אושר" if already else "אישור הערך שהוקלד", key=f"ok_{page}_{okey}",
-                              on_click=_confirm_typed, args=(page, okey), type="secondary" if already else "primary",
-                              width="stretch", disabled=locked,
-                              help="הערך שהוקלד זהה לערך השמור. שינוי הטקסט ואישור יחליפו אותו." if already else "Enter בשדה מאשר")
-    if cell.confirmed:                                   # פעולה משנית: כפתור שקט מתחת לטופס
-        st.button("ביטול אישור", key=f"clr_{page}_{okey}", on_click=_clear, args=(page, okey), width="stretch", disabled=locked)
+        st.form_submit_button("אישור הערך שהוקלד", key=f"ok_{page}_{okey}", on_click=_confirm_typed, args=(page, okey),
+                              type="primary", width="stretch", disabled=locked, help="Enter בשדה מאשר")
 
 
 def render_detail(page_res: dict, er, key: str, image: bytes | None, row_i: int, n_rows: int, nxt, hidden: bool) -> None:
@@ -495,8 +512,8 @@ def render_detail(page_res: dict, er, key: str, image: bytes | None, row_i: int,
         unsafe_allow_html=True,
     )
     nav_next.button("בדיקה הבאה ←", key="next_cell", on_click=_select, args=(nxt,), disabled=nxt is None, width="stretch",
-                    help="התא הבא שדורש בדיקה (כתום, צהוב או ריק)")
-    nav_close.button("סגירה", key="close_detail", on_click=_select, args=(None,), width="stretch")
+                    help="התא הבא שדורש בדיקה (כתום, צהוב או ריק); בכרטיס הזה זה גם קורה אוטומטית אחרי אישור ערך")
+    nav_close.button("✕", key="close_detail", on_click=_select, args=(None,), type="tertiary", help="סגירת הכרטיס")
     info = None
     if st.session_state.get("upload_id") and not st.session_state.get("is_sample"):
         try:
@@ -512,12 +529,12 @@ def render_detail(page_res: dict, er, key: str, image: bytes | None, row_i: int,
             btn_col.button("ביטול אישור השורה", key=f"unappr_{info['id']}", on_click=_unapprove_row, args=(info["id"],), width="stretch")
         else:
             with btn_col:
+                kind, status_text = ui_text.row_check_status(len(pending))
+                st.markdown(ui.status_pill(kind, status_text), unsafe_allow_html=True)
                 st.button("אישור שורה", key=f"appr_{info['id']}", on_click=_approve_row, args=(info["id"],), type="primary",
                           width="stretch", disabled=bool(pending),
                           help=("יש לאשר או לתקן קודם: " + ", ".join(pending)) if pending
                           else "מסמן את כל השורה כבדוקה. שורה מאושרת נעולה ולא נדרסת בעיבוד חוזר.")
-                if pending:
-                    st.caption(ui_text.pending_hint(len(pending)))
     st.markdown("<div class='panel-rule'></div>", unsafe_allow_html=True)
     ev_col, act_col = st.columns([1.45, 1], gap="large")       # RTL: הראיות מימין, האישור משמאל
     with ev_col:
@@ -540,6 +557,25 @@ def kpi_cards(items) -> str:
 
 def share(n: int, total: int) -> str:
     return f"{round(100 * n / total)}% מהשדות" if total else "—"
+
+
+def guided_queue_count() -> int:
+    """כמה תאים יש בבדיקה המודרכת (מהמסד) לקובץ הנוכחי. 0 בדוגמה (אין מסד לקובץ הזה) או בלי קובץ שמור,
+    כי הבדיקה המודרכת פועלת על רשומות שמורות, לא על הטבלה שבזיכרון."""
+    uid = st.session_state.get("upload_id")
+    if not uid or st.session_state.get("is_sample"):
+        return 0
+    try:
+        return service.review_counts(db(), service.RecordFilter(upload_id=uid))["cells"]
+    except Exception as e:
+        log_server_error("review_counts", e)
+        return 0
+
+
+def _start_guided() -> None:
+    """פתיחת הבדיקה המודרכת על הקובץ הנוכחי (CTA במסך העיבוד, מקביל לכפתור "התחלת בדיקה" במסך הרשומות)."""
+    uid = st.session_state.get("upload_id")
+    review_screen.start(service.RecordFilter(upload_id=uid) if uid else service.RecordFilter())
 
 
 # ---------- דף ----------
@@ -575,6 +611,10 @@ if _notice:
 
 if st.session_state.get("view") == "records":   # מסך הרשומות לא מכיל העלאה ולא פעולות עיבוד: הן שייכות למסך העיבוד בלבד
     records_screen.render(db, he_flag)
+    st.stop()
+
+if review_screen.active():            # בדיקה מודרכת פעילה (הותחלה גם ממסך העיבוד): היא תופסת את המסך
+    review_screen.render(db, he_flag)
     st.stop()
 
 # כפתור הדוגמה הוא לדמו בלבד (טופסי חלק 1 מהריצה השמורה), ואין לו מקום בפריסה של המעבדה:
@@ -693,6 +733,15 @@ wb.save(buf)
 download_slot.download_button("הורדת אקסל", buf.getvalue(), file_name="commitments.xlsx", key="dl_xlsx", width="stretch",
                               mime="application/vnd.openxmlformats-officedocument.spreadsheetml.sheet", type="primary")
 
+guided_cells = guided_queue_count()
+if guided_cells:         # הבדיקה המודרכת פועלת על רשומות שמורות (לא על הדוגמה): זמינה רק לקובץ שהועלה בפועל
+    with st.container(key="guided_cta"):
+        cta_text, cta_btn = st.columns([4, 1.6], vertical_alignment="center")
+        cta_text.markdown(ui.quiet(f"<b>{guided_cells}</b> תאים לבדיקה בקובץ הזה. הבדיקה המודרכת עוברת עליהם "
+                                   "אחד אחרי השני, עם הטופס המקורי לצד הערך."), unsafe_allow_html=True)
+        cta_btn.button("התחלת בדיקה מודרכת", key="start_guided", on_click=_start_guided, type="primary", width="stretch",
+                       help="עוברים תא-תא על כל מה שסומן לבדיקה, עם הטופס המקורי לצד הערך")
+
 # ---------- סרגל אחד: מסננים מהירים, מונה, מצב פוקוס ----------
 masks = row_masks(colors)
 with st.container(key="toolbar"):
@@ -763,7 +812,11 @@ else:
     tip, go = st.columns([5, 1.2], vertical_alignment="center")
     tip.markdown("<div class='placeholder'><b>בחירת תא בטבלה</b>"
                  "<span>כרטיס הבדיקה ייפתח כאן: האזור הסרוק, הדגלים, ההצעות וכפתורי האישור.</span></div>", unsafe_allow_html=True)
-    go.button("התחלה מהחריג הראשון", key="first_cell", on_click=_select, args=(first,), disabled=first is None, type="primary", width="stretch")
+    # כש"התחלת בדיקה מודרכת" מוצעת למעלה היא הפעולה הראשית; הכפתור הזה הוא לעריכה נקודתית של תא בודד,
+    # ונשאר ראשי רק כשהבדיקה המודרכת לא זמינה (דוגמה, או קובץ בלי תאים לבדיקה).
+    go.button("התחלה מהתא הראשון (עריכה נקודתית)" if guided_cells else "התחלה מהחריג הראשון",
+              key="first_cell", on_click=_select, args=(first,), disabled=first is None,
+              type="secondary" if guided_cells else "primary", width="stretch")
 
 with st.container(key="secondary"):                         # אזורים משניים: סגורים כברירת מחדל
     with st.expander("פירוט לפי שדה", expanded=False):

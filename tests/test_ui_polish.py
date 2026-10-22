@@ -334,3 +334,27 @@ def test_the_review_banner_keeps_every_number_with_hierarchy():
     assert "class='rv-chip accent'" in chips                      # "נשארו" מודגש בגוון המותג
     card = ui.banner("בדיקה במבט אחד", "שורת הסבר", chips)
     assert "class='rv-title'" in card and "class='rv-sub'" in card and chips in card
+
+
+# ---------- 1: פס מצב קריא מעל כפתור אישור השורה, ושורת סטטוס לערך מאושר (כרטיס הבדיקה) ----------
+
+def test_row_check_status_text_and_kind():
+    assert ui_text.row_check_status(0) == ("ok", ui_text.ALL_CHECKED_HE)
+    assert ui_text.row_check_status(1) == ("warn", "נותר שדה אחד לבדיקה")
+    assert ui_text.row_check_status(3) == ("warn", "נותרו 3 שדות לבדיקה")
+
+
+def test_status_pill_and_confirm_status_markup():
+    assert ui.status_pill("warn", "נותרו 2 שדות לבדיקה") == "<div class='row-check warn'>נותרו 2 שדות לבדיקה</div>"
+    assert ui.status_pill("ok", ui_text.ALL_CHECKED_HE) == f"<div class='row-check ok'>{ui_text.ALL_CHECKED_HE}</div>"
+    assert ui.confirm_status("ישראל") == "<div class='confirm-status'>✓ אושר: ישראל</div>"
+
+
+# ---------- 4: כפתור סגירת הכרטיס הוא סמל קטן עם תווית נגישה, לא פעולה ראשית ----------
+
+@needs_sample
+def test_close_button_is_a_small_icon_with_an_accessible_label(monkeypatch):
+    at = loaded_screen(monkeypatch, cell=(0, "שם פרטי"))
+    close = next(b for b in at.button if b.key == "close_detail")
+    assert close.label == "✕" and close.proto.help == "סגירת הכרטיס"
+    assert close.proto.type == "tertiary"                          # לא ראשי ולא משני-כמו-פעולה

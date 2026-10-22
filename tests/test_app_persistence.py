@@ -58,7 +58,8 @@ def button(at, key):
 
 def test_typed_value_is_written_to_db_and_cleared(app):
     """ערך שהוקלד ושונה מהצעת המכונה נרשם כעריכה. (ערך זהה להצעה נרשם כאישור; ראו repo.edit_field,
-    וזה המצב מאז שהקריאה בכתב יד מוצגת בתא ככתום.)"""
+    וזה המצב מאז שהקריאה בכתב יד מוצגת בתא ככתום.) אישור מזניק אוטומטית לתא הבא שדורש בדיקה, ולכן חוזרים
+    לבחור את השדה הזה במפורש לפני שממשיכים לבטל את האישור שלו."""
     at, conn, uid, pages = app
     select(at, pages, 1, "שם פרטי")
     at.text_input(key="txt_1_first_name").set_value("דנה")
@@ -67,6 +68,7 @@ def test_typed_value_is_written_to_db_and_cleared(app):
     rec = repo.get_record(conn, rid)
     assert rec["first_name"] == "דנה" and rec["fields"]["first_name"]["human_edited"]
     assert repo.audit_entries(conn, rid)[-1]["action"] == "edit"
+    select(at, pages, 1, "שם פרטי")
     button(at, "clr_1_first_name").click().run()
     assert repo.get_record(conn, rid)["fields"]["first_name"]["cell_confirmed"] is False
 
@@ -103,10 +105,9 @@ def test_sample_mode_does_not_touch_db(tmp_path, monkeypatch):
     assert not at.exception and not db.exists()
 
 
-def test_confirm_button_says_when_the_typed_value_is_already_saved(app):
-    """ההקלדה בטופס מגיעה לשרת רק עם השליחה, ולכן הכפתור אינו נעול לפי מה שמוקלד (אחרת אי אפשר היה
-    להחליף ערך: Enter על כפתור נעול לא שולח כלום). הוא אומר אם הערך שבשדה כבר אושר, ואישור חוזר של
-    אותו ערך אינו כותב דבר."""
+def test_confirmed_value_shows_as_a_status_line_not_a_button(app):
+    """אחרי אישור: שורת סטטוס ("✓ אושר: ...") וכפתור "ביטול אישור" בלבד, בלי כפתור-שהוא-תג ("הערך אושר").
+    ביטול ואז הקלדת ערך אחר כותבים ערך חדש כרגיל (אין יותר אפשרות לשלוח ערך אחר בלי לבטל קודם)."""
     at, conn, uid, pages = app
     select(at, pages, 1, "שם פרטי")
     rid = repo.find_record(conn, uid, 1, 0)
@@ -114,23 +115,24 @@ def test_confirm_button_says_when_the_typed_value_is_already_saved(app):
     at.text_input(key="txt_1_first_name").set_value("ישראל")
     button(at, "ok_1_first_name").click().run()
     assert repo.get_record(conn, rid)["first_name"] == "ישראל"
-    assert button(at, "ok_1_first_name").label == "הערך אושר" and not button(at, "ok_1_first_name").disabled
-    version, n = repo.get_record(conn, rid)["version"], len(repo.audit_entries(conn, rid))
-    button(at, "ok_1_first_name").click().run()                                # שליחה חוזרת של אותו ערך
-    assert (repo.get_record(conn, rid)["version"], len(repo.audit_entries(conn, rid))) == (version, n)
-    at.text_input(key="txt_1_first_name").set_value("ישראלה")                  # ערך אחר: נשמר, גם אחרי "הערך אושר"
+    select(at, pages, 1, "שם פרטי")                      # האישור הזניק לתא הבא; חוזרים לבדוק את השדה הזה
+    assert any("✓ אושר: ישראל" in m.value for m in at.markdown)
+    assert not [b for b in at.button if b.key == "ok_1_first_name"]
+    button(at, "clr_1_first_name").click().run()
+    at.text_input(key="txt_1_first_name").set_value("ישראלה")                  # ביטול, ואז ערך אחר: נשמר כרגיל
     button(at, "ok_1_first_name").click().run()
     assert repo.get_record(conn, rid)["first_name"] == "ישראלה"
 
 
-def test_confirm_label_follows_db_not_session(app):
+def test_confirmed_status_follows_db_not_session(app):
     at, conn, uid, pages = app
     select(at, pages, 1, "שם פרטי")
     rid = repo.find_record(conn, uid, 1, 0)
     repo.edit_field(conn, rid, "first_name", "דנה")                            # אושר ממקום אחר (מסך הרשומות)
     at.text_input(key="txt_1_first_name").set_value("דנה")
     button(at, "ok_1_first_name").click().run()
-    assert button(at, "ok_1_first_name").label == "הערך אושר"
+    assert any("✓ אושר: דנה" in m.value for m in at.markdown)
+    assert not [b for b in at.button if b.key == "ok_1_first_name"]
     repo.revert_field(conn, rid, "first_name")                                 # בוטל ממקום אחר
     at.run()
     assert button(at, "ok_1_first_name").label == "אישור הערך שהוקלד"
@@ -149,3 +151,33 @@ def test_double_submit_of_same_value_writes_once(app):
     service.save_override(conn, uid, 1, "first_name", "ישראל", pages[0])
     assert (repo.get_record(conn, rid)["version"], len(repo.audit_entries(conn, rid))) == (v, n)
     assert not at.error
+
+
+def test_pending_fields_shown_as_a_pill_above_the_approve_button(app):
+    """פס מצב קריא מעל כפתור "אישור שורה" (לא טקסט אפור קטן מתחתיו): כתום כל עוד נשארו שדות לבדיקה,
+    ירוק כש"כל השדות נבדקו, אפשר לאשר את השורה"."""
+    at, conn, uid, pages = app
+    er = row_of_page(pages, 1)
+    n_pending = sum(1 for cell in er.cells.values() if cell.orange and cell.value)
+    assert n_pending, "הבדיקה מניחה שבעמוד 1 יש שדה כתום עם ערך (אחרת אין מה למדוד)"
+    select(at, pages, 1, "שם פרטי")
+    rid = repo.find_record(conn, uid, 1, 0)
+    from src import ui_text
+    expected = ui_text.pending_hint(n_pending)
+    assert any(expected in m.value and "row-check warn" in m.value for m in at.markdown)
+    assert next(b for b in at.button if b.key == f"appr_{rid}").disabled
+    clear_pending(at, er)
+    select(at, pages, 1, "שם פרטי")
+    assert any(ui_text.ALL_CHECKED_HE in m.value and "row-check ok" in m.value for m in at.markdown)
+    assert not next(b for b in at.button if b.key == f"appr_{rid}").disabled
+
+
+def test_guided_review_cta_is_the_primary_action_when_cells_need_checking(app):
+    """במסך העיבוד, כש"יש" תאים לבדיקה בקובץ השמור: "התחלת בדיקה מודרכת" ראשית, וכפתור התא הבודד
+    (עריכה נקודתית מהטבלה) משני."""
+    at, conn, uid, pages = app
+    at.run()
+    cta = next(b for b in at.button if b.key == "start_guided")
+    point_edit = next(b for b in at.button if b.key == "first_cell")
+    assert cta.proto.type == "primary" and point_edit.proto.type == "secondary"
+    assert point_edit.label == "התחלה מהתא הראשון (עריכה נקודתית)"

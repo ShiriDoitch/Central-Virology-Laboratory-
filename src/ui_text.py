@@ -61,3 +61,11 @@ def progress_text(page: int, total: int, stage: str) -> str:
 def pending_hint(n: int) -> str:
     """ההערה מתחת לכפתור אישור שנעול: כמה שדות עוד מחכים לבדיקה בשורה."""
     return "נותר שדה אחד לבדיקה" if n == 1 else f"נותרו {n} שדות לבדיקה"
+
+
+ALL_CHECKED_HE = "כל השדות נבדקו, אפשר לאשר את השורה"
+
+
+def row_check_status(n: int) -> tuple[str, str]:
+    """(קוד מצב, טקסט) לפס המצב שמעל כפתור אישור השורה: "warn" (כתום) כל עוד נשארו שדות לבדיקה, "ok" (ירוק) ב-0."""
+    return ("warn", pending_hint(n)) if n else ("ok", ALL_CHECKED_HE)
