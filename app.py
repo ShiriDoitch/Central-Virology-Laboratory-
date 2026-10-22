@@ -1,5 +1,6 @@
 """ממשק Streamlit: העלאת טפסי התחייבות, הצגת השדות בצבעים, פירוט ראיות לכל שדה, וייצוא לאקסל.
 הפעלה: streamlit run app.py   (בלי שינוי כללים: כל ההחלטות ב-src/rules.py ו-src/senders.py)."""
+import base64
 import io
 import html
 import json
@@ -25,6 +26,7 @@ from src.upload import UploadRejected, cleanup_stale_uploads, process_upload, to
 SAMPLE_DIR = Path("outputs/clean_part1_v4b")      # הריצה השמורה (בלי API)
 SAMPLE_PDF = Path("data/clean_part1.pdf")         # עמודים נקיים, בלי סימון צהוב
 TRUTH_PATH = Path("data/truth_part1.xlsx")
+MOH_LOGO_PATH = Path("assets/moh_logo.png")       # לוגו משרד הבריאות בבאנר הפתיחה; בלי קובץ: הבאנר נופל חזרה לתווית-מקום
 MAX_UPLOAD_MB = 25
 GREEN_HEX, ORANGE_HEX = "#" + GREEN.fgColor.rgb[-6:], "#" + ORANGE.fgColor.rgb[-6:]
 CONFIRMED_HEX = "#" + CONFIRMED.fgColor.rgb[-6:]      # שם שאושר על ידי המשתמש
@@ -542,6 +544,11 @@ def share(n: int, total: int) -> str:
 
 # ---------- דף ----------
 
+if MOH_LOGO_PATH.exists():
+    _logo_b64 = base64.b64encode(MOH_LOGO_PATH.read_bytes()).decode()
+    _hero_badges = f"<img class='hero-logo' src='data:image/png;base64,{_logo_b64}' alt='משרד הבריאות'>"
+else:                                              # נפילה רכה: קובץ הלוגו חסר (למשל שכפול בלי assets/)
+    _hero_badges = "<div class='hero-badge'>משרד<br>הבריאות</div>"
 st.markdown(
     "<div class='hero-banner'>"
     "<div class='hero-content'>"
@@ -549,7 +556,7 @@ st.markdown(
     "<div class='hero-title'>מערכת חילוץ ובקרת טפסי התחייבות</div>"
     "<div class='hero-subtitle'>שורה אחת לכל התחייבות · בקרת נתונים אוטומטית</div>"      # משמעות הצבעים: במקרא שמתחת לטבלה
     "</div>"
-    "<div class='hero-badges'><div class='hero-badge'>משרד<br>הבריאות</div><div class='hero-badge'>המעבדה<br>המרכזית</div></div>"
+    f"<div class='hero-badges'>{_hero_badges}</div>"
     "</div>",
     unsafe_allow_html=True,
 )

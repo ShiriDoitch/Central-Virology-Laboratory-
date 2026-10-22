@@ -171,7 +171,8 @@ code {font-family: 'IBM Plex Mono', monospace !important; direction: ltr; unicod
 .hero-title {font-size: var(--fs-hero); font-weight: 800; color: var(--ink); line-height: var(--lh-tight); margin: 0 0 6px;}
 .hero-subtitle {font-size: var(--fs-cap); color: var(--ink-3);}
 .hero-badges {display: flex; align-items: center; gap: var(--sp-2); flex-shrink: 0;}
-/* מקום שמור ללוגו רשמי (לא לוגו בפועל): תווית כוללת בלבד, לא חותמת מדומה */
+.hero-logo {height: 52px; width: auto; max-width: 160px; object-fit: contain; display: block; flex-shrink: 0;}
+/* נפילה רכה כש-assets/moh_logo.png חסר: תווית מקום, לא לוגו בפועל */
 .hero-badge {display: flex; align-items: center; justify-content: center; min-width: 78px; height: 48px; padding: 0 var(--sp-2);
       border: 1.5px dashed var(--accent-line); border-radius: var(--radius-sm); background: var(--paper);
       font-size: var(--fs-cap); font-weight: 600; color: var(--accent-muted); text-align: center; line-height: 1.15; flex-shrink: 0;}
