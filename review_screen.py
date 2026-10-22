@@ -12,7 +12,7 @@ import streamlit as st
 import evidence_view
 from src import guided_review, service
 from src import ui_theme as ui
-from src.confirm import FIELD_REGION, INPUT_HINTS, NOT_VERIFIED_NOTE, flag_chips_html, md_text
+from src.confirm import APPROX_NOTE, FIELD_REGION, INPUT_HINTS, NOT_VERIFIED_NOTE, flag_chips_html, md_text
 from src.export import COLUMNS
 from src.privacy import log_server_error
 
@@ -215,20 +215,23 @@ def _render_evidence(conn, record: dict, item) -> None:
     """הטופס המקורי: החיתוך של האזור שממנו נקרא השדה, או העמוד המלא עם מסגרת סביב האזור."""
     st.markdown("<div class='col-label'>הטופס המקורי</div>", unsafe_allow_html=True)
     try:
-        image, crop, fractions = service.review_cell_image(conn, record, item.field)
+        image, crop, fractions, verified = service.review_cell_image(conn, record, item.field)
     except Exception as e:
         log_server_error("review_cell_image", e)
-        image, crop, fractions = None, None, None
+        image, crop, fractions, verified = None, None, None, False
     if image is None:
         st.info(service.IMAGE_MISSING_TEXT + ". אפשר לאשר או לתקן את הערך גם בלי התמונה.")
         return
     st.toggle("הצגת העמוד המלא", key=FULL_PAGE_KEY, help="העמוד כולו, עם מסגרת סביב האזור של השדה")
     zoom_key = f"rv_zoom_{item.record_id}_{item.field}"
-    note = NOT_VERIFIED_NOTE if (not fractions and FIELD_REGION.get(item.field)) else None
-    if st.session_state.get(FULL_PAGE_KEY) or not crop:
-        evidence_view.render_page_region(image, fractions, record["page_no"], zoom_key=zoom_key + "_full", no_region_note=note)
+    if fractions:
+        note = None if verified else APPROX_NOTE
     else:
-        evidence_view.render_crop_and_page(crop, None, record["page_no"], zoom_key=zoom_key, no_crop_note=note)
+        note = NOT_VERIFIED_NOTE if FIELD_REGION.get(item.field) else None
+    if st.session_state.get(FULL_PAGE_KEY) or not crop:
+        evidence_view.render_page_region(image, fractions, record["page_no"], zoom_key=zoom_key + "_full", note=note)
+    else:
+        evidence_view.render_crop_and_page(crop, None, record["page_no"], zoom_key=zoom_key, note=note)
 
 
 def _render_actions(sess: guided_review.ReviewSession, record: dict, item, state: dict, he_flag) -> None:

@@ -37,54 +37,82 @@ def test_override_key_is_per_row_only_for_commitment():
     assert confirm.override_key("commitment", 2) == "commitment#2" and confirm.override_key("center", 2) == "center"
 
 
-def test_field_fractions_has_no_region_concept_for_sender_and_date():
-    """לשולח ולתאריך אין מושג אזור כלל (FIELD_REGION): None בלי שום ניסיון אימות, גם עם ערך ועם ברקודים בעמוד."""
+def test_sender_has_no_region_concept_at_all():
+    """לשולח אין מושג אזור כלל (לא ב-FIELD_REGION): (None, False) בלי שום ניסיון, גם עם ערך ועם ברקודים בעמוד."""
     page = {"page": 1, "barcodes": [{"format": "Code128", "text": "123456", "box": [0.1, 0.1, 0.2, 0.15]}]}
-    assert confirm.field_fractions(page, "date", "18.06.2026") is None
-    assert confirm.field_fractions(page, "sender", "כללית") is None
-    assert confirm.field_crop("x.pdf", page, "date", "18.06.2026") is None
+    assert confirm.field_fractions(page, "sender", "כללית") == (None, False)
 
 
-def test_field_fractions_never_show_the_models_box_a_wrong_barcode_is_not_verification():
-    """רגרסיה: ה-box שהמודל "הצהיר" (patient_box / barcode_box וכו') לא נבדק ולא מוצג יותר כראיה. בדוגמה מהשטח:
-    מרכזי 939376 נקרא נכון, אבל ה-box של המודל הצביע על ברקוד אחר בעמוד (תאריך ההנפקה, 0046025783, קרוב לפינה
-    הנגדית) - תמונה שגויה גרועה מהיעדר תמונה, ולכן אין יותר הסתמכות על box כלל, רק על ברקוד שהטקסט שלו שווה בדיוק
-    לערך שהוחלט."""
+def test_date_without_any_model_box_or_matching_barcode_has_no_region_either():
+    """לתאריך יש מושג אזור (FIELD_REGION["date"]), אבל בלי box שהמודל הצהיר עליו ובלי ברקוד תואם, אין שום אזור
+    להציע - לא מאומת ולא משוער."""
+    page = {"page": 1, "barcodes": [{"format": "Code128", "text": "123456", "box": [0.1, 0.1, 0.2, 0.15]}]}
+    assert confirm.field_fractions(page, "date", "18.06.2026") == (None, False)
+    assert confirm.field_crop("x.pdf", page, "date", "18.06.2026") == (None, False)
+
+
+def test_field_fractions_never_trusts_the_models_box_blindly_a_wrong_barcode_is_not_verification():
+    """רגרסיה: ה-box שהמודל "הצהיר" (patient_box / barcode_box וכו') לא נבדק מקומית ולכן לא נספר כ"מאומת". בדוגמה
+    מהשטח: מרכזי 939376 נקרא נכון, אבל ה-box של המודל הצביע על ברקוד אחר בעמוד (תאריך ההנפקה, 0046025783, קרוב
+    לפינה הנגדית). הערך שהוחלט שווה בדיוק לברקוד הנכון - האימות המקומי מצליח ומחזיר את האזור הנכון, לא את ה-box
+    השגוי של המודל."""
     page = {"page": 1, "rotation": {"applied": 0},
             "barcodes": [{"format": "Code128", "text": "939376", "box": [0.05, 0.05, 0.22, 0.10]},
                          {"format": "Code128", "text": "0046025783", "box": [0.65, 0.72, 0.92, 0.77]}]}
-    fr = confirm.field_fractions(page, "center", "939376")
-    assert fr is not None
+    fr, verified = confirm.field_fractions(page, "center", "939376")
+    assert verified is True and fr is not None
     x0, y0, x1, y1 = fr
     assert x1 < 0.5 and y1 < 0.5                          # לא קרוב לברקוד השגוי (האחר, שליד תאריך ההנפקה)
     assert x0 <= 0.05 and y0 <= 0.05 and x1 >= 0.22 and y1 >= 0.10     # מכיל את תיבת הברקוד הנכון (עם שוליים, לא פחות)
 
 
+def test_center_without_a_verifying_barcode_shows_nothing_not_even_the_models_box():
+    """החריג (NO_APPROX_REGION): למרכזי, שהאזור שלו הוא בחירה בין כמה ברקודים אפשריים בעמוד, אין נפילה לאזור
+    המודל בלי אימות - זו בדיוק התקלה שתוקנה (box שמצביע על ברקוד לא נכון). (None, False) גם כש-boxes.barcode קיים."""
+    page = {"page": 1, "rotation": {"applied": 0}, "boxes": {"barcode": {"fractions": [0.65, 0.72, 0.92, 0.77]}},
+            "barcodes": [{"format": "Code128", "text": "0046025783", "box": [0.65, 0.72, 0.92, 0.77]}]}
+    assert confirm.field_fractions(page, "center", "939376") == (None, False)
+
+
+def test_a_field_with_no_barcode_dependence_falls_back_to_the_models_box_marked_as_approximate():
+    """הכלל הכללי (לא "מרכזי"): בלי אימות מקומי, האזור שהמודל "הצהיר" עליו מוצג בכל זאת, מאומת=False - קירוב בלבד,
+    לא פסילה. התחייבות עם box שהמודל דיווח, ובלי ברקוד תואם לערך."""
+    page = {"page": 3, "rotation": {"applied": 0}, "boxes": {"commitment": {"fractions": [0.3, 0.6, 0.5, 0.65]}},
+            "barcodes": []}
+    fr, verified = confirm.field_fractions(page, "commitment", "107646")
+    assert verified is False and fr == (0.3, 0.6, 0.5, 0.65)
+
+
 def test_field_fractions_use_the_decoded_barcode_position_when_it_matches_the_value():
     """אימות מקומי: ערך שהוחלט ששווה בדיוק לטקסט שפוענח מברקוד (src/barcode.py) - האזור המוצג הוא מיקום הברקוד,
-    לא box של המודל (אין כזה כלל כאן)."""
+    לא box של המודל (אין כזה כלל כאן), ומאומת=True."""
     page = {"page": 3, "rotation": {"applied": 0}, "barcodes": [{"format": "Code128", "text": "50364186", "box": [0.3, 0.6, 0.5, 0.65]}]}
-    x0, y0, x1, y1 = confirm.field_fractions(page, "commitment", "50364186")
+    (x0, y0, x1, y1), verified = confirm.field_fractions(page, "commitment", "50364186")
+    assert verified is True
     assert x0 < 0.3 and y0 < 0.6 and x1 > 0.5 and y1 > 0.65          # מורחב (שוליים), לא קטן מתיבת הברקוד
-    assert confirm.field_fractions(page, "commitment", "99999999") is None     # ערך שאינו טקסט של אף ברקוד: לא מאומת
+    # ערך שאינו טקסט של אף ברקוד, ובלי box של המודל לנפול אליו: לא מאומת ובלי קירוב
+    assert confirm.field_fractions(page, "commitment", "99999999") == (None, False)
 
 
 def test_field_fractions_rotates_the_decoded_barcode_position_to_match_the_applied_rotation():
     """הברקוד מפוענח מה-PDF בלי הסיבוב הנוסף שהקוד מחיל לפני השליחה למודל (src/barcode.py); כשיש rotation.applied
     המיקום ממופה לעמוד המסובב (src/crop.rotate_fractions_cw), אחרת הסימון היה נופל במקום הלא נכון אחרי סיבוב."""
     base = {"page": 1, "barcodes": [{"format": "Code128", "text": "937309", "box": [0.0, 0.0, 0.1, 0.1]}]}
-    unrotated = confirm.field_fractions({**base, "rotation": {"applied": 0}}, "center", "937309")
-    rotated = confirm.field_fractions({**base, "rotation": {"applied": 90}}, "center", "937309")
-    assert unrotated != rotated
+    unrotated, v1 = confirm.field_fractions({**base, "rotation": {"applied": 0}}, "center", "937309")
+    rotated, v2 = confirm.field_fractions({**base, "rotation": {"applied": 90}}, "center", "937309")
+    assert v1 is True and v2 is True and unrotated != rotated
     assert rotated[2] > 0.8                                           # הפינה השמאלית-עליונה עברה לפינה הימנית-עליונה
 
 
 def test_field_fractions_with_no_barcodes_at_all_cannot_be_verified():
-    """נפילה בטוחה: בלי ברקודים (או בלי פענוח), לכל ערך, אין שום אזור מאומת - בלי יוצא מהכלל ל-box של המודל."""
-    assert confirm.field_fractions({"page": 1}, "id", "123456789") is None
-    assert confirm.field_fractions({"page": 1, "barcodes": None}, "center", "937309") is None
-    assert confirm.field_fractions({"page": 1, "barcodes": []}, "commitment", "50364186") is None
-    assert confirm.field_crop("no_such_file.pdf", {"page": 1}, "center", "937309") is None
+    """נפילה בטוחה: בלי ברקודים (או בלי פענוח), לכל ערך, אין שום אזור מאומת. שדה שאינו "מרכזי" מקבל במקום זאת
+    את אזור המודל (קירוב, מאומת=False) אם יש כזה; "מרכזי" (NO_APPROX_REGION) לא מקבל אפילו את זה."""
+    fr, verified = confirm.field_fractions({"page": 1}, "id", "123456789")
+    assert verified is False and fr is not None                      # patient: יש חיתוך קבוע (region_fractions fallback)
+    assert confirm.field_fractions({"page": 1, "barcodes": None}, "center", "937309") == (None, False)
+    assert confirm.field_fractions({"page": 1, "barcodes": []}, "commitment", "50364186") == (None, False)
+    crop, verified = confirm.field_crop("no_such_file.pdf", {"page": 1}, "center", "937309")
+    assert crop is None and verified is False
 
 
 def test_suggestions_are_value_then_alternatives_without_duplicates_or_blanks():

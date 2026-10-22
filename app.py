@@ -10,7 +10,7 @@ from pathlib import Path
 import pandas as pd
 import streamlit as st
 
-from src.confirm import FIELD_REGION, INPUT_HINTS, NOT_VERIFIED_NOTE, field_crop, flag_chips_html, md_code, md_text, name_suggestions, normalize_override, override_key, set_override, zoom_html
+from src.confirm import APPROX_NOTE, FIELD_REGION, INPUT_HINTS, NOT_VERIFIED_NOTE, field_crop, flag_chips_html, md_code, md_text, name_suggestions, normalize_override, override_key, set_override, zoom_html
 from src.export import COLUMNS, CONFIRMED, FIELD_KEYS, GREEN, ORANGE, YELLOW, _readings, build_rows, build_workbook, pass2_issues, skip_reason
 import evidence_view
 import records_screen
@@ -273,16 +273,16 @@ def orange_correct(pages: list[dict]) -> tuple[int, int]:
     return ok, total
 
 
-def crop_for(page_res: dict, key: str, value: str | None) -> bytes | None:
-    """חיתוך מאומת מקומית של האזור של השדה מהעמוד הנקי (None: לשדה אין מושג אזור, או שאין אימות מקומי לערך הזה).
+def crop_for(page_res: dict, key: str, value: str | None) -> tuple[bytes | None, bool]:
+    """(חיתוך, מאומת) של האזור של השדה מהעמוד הנקי ((None, False): לשדה אין מושג אזור, או שאין שום ראיה לשדה הזה).
     בהעלאה: נוצר בעיבוד. בדוגמה: בפעם הראשונה שמבקשים."""
     if not FIELD_REGION.get(key):
-        return None
+        return None, False
     crops = st.session_state.setdefault("field_crops", {})
     token = (page_res["page"], key)
     if token not in crops and st.session_state.get("is_sample"):
         crops[token] = field_crop(str(SAMPLE_PDF), page_res, key, value)
-    return crops.get(token)
+    return crops.get(token, (None, False))
 
 
 def _page_result(page: int) -> dict | None:
@@ -410,7 +410,7 @@ def _select(cell) -> None:
 def render_evidence(page_res: dict, er, key: str, image: bytes | None) -> None:
     """צד הראיות: חיתוך האזור מהעמוד הנקי (עם הגדלה) או העמוד המלא, הערך, הדגלים, החלופות והקריאות הגולמיות."""
     cell = er.cells[key]
-    crop = crop_for(page_res, key, cell.value)
+    crop, verified = crop_for(page_res, key, cell.value)
     state, _label = cell_status(cell)
     st.markdown("<div class='col-label'>ראיות מהטופס</div>", unsafe_allow_html=True)
     code = md_code if key in CODE_KEYS else md_text       # קודים במונוספייס; שמות ופרוזה לא. כל טקסט מהטופס עובר escape
@@ -425,8 +425,8 @@ def render_evidence(page_res: dict, er, key: str, image: bytes | None) -> None:
     if cell.alternatives and key not in NAME_KEYS:
         label = "מועמדים שנמצאו (התא ריק)" if not cell.value else "חלופות"
         st.markdown(f"**{label}:** " + " | ".join(md_text(a) for a in cell.alternatives))
-    note = NOT_VERIFIED_NOTE if (not crop and FIELD_REGION.get(key)) else None
-    evidence_view.render_crop_and_page(crop, image, er.page, zoom_key=f"zoom_{er.page}_{FIELD_REGION.get(key)}", no_crop_note=note)      # רכיב משותף עם כרטיס הרשומה
+    note = (None if verified else APPROX_NOTE) if crop else (NOT_VERIFIED_NOTE if FIELD_REGION.get(key) else None)
+    evidence_view.render_crop_and_page(crop, image, er.page, zoom_key=f"zoom_{er.page}_{FIELD_REGION.get(key)}", note=note)      # רכיב משותף עם כרטיס הרשומה
     if not is_production():      # קריאות גולמיות הן כלי פיתוח (וגם נתוני מטופל נוספים על המסך): לא בפריסה של המעבדה
         r1 = PageExtraction.model_validate(page_res["pass1"])
         p1, p2 = _readings(key, r1, page_res.get("pass2"))

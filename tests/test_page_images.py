@@ -62,8 +62,8 @@ def test_image_and_regions_written_on_persist(conn, tmp_path):
     img = Image.open(io.BytesIO(path.read_bytes()))
     assert img.size[0] > 100
     regions = repo.get_page_regions(conn, store.upload_id, 1)
-    assert regions["id"]                              # מאומת מקומית מול הברקוד (box שהמודל "הצהיר" לא נבדק יותר)
-    assert "first_name" not in regions                # אין ברקוד לשם: אין אזור מאומת, לא box לא-מאומת
+    assert regions["id"]["verified"] is True                      # מאומת מקומית מול הברקוד
+    assert regions["first_name"]["verified"] is False             # אין ברקוד לשם: קירוב בלבד, אזור ה-box שהמודל הצהיר עליו
 
 
 def test_paths_are_numeric_only_and_contain_no_name_or_id(conn, tmp_path):
@@ -167,9 +167,11 @@ def test_record_images_returns_crops_from_the_stored_image(conn, tmp_path):
     rid = first_ids(conn, store)[0]
     image, crops = service.record_images(conn, repo.get_record(conn, rid))
     assert image and set(crops) == {"first_name", "last_name", "id", "center", "date", "sender", "commitment"}
-    assert crops["id"] and Image.open(io.BytesIO(crops["id"])).size[0] > 50       # מאומת מקומית מול הברקוד
-    assert crops["first_name"] is None                               # אין ברקוד לשם: אין אזור מאומת
-    assert crops["sender"] is None                                   # אין אזור לשולח
+    id_crop, id_verified = crops["id"]
+    assert id_verified is True and id_crop and Image.open(io.BytesIO(id_crop)).size[0] > 50       # מאומת מקומית מול הברקוד
+    name_crop, name_verified = crops["first_name"]
+    assert name_verified is False and name_crop                  # קירוב: אזור ה-box שהמודל הצהיר עליו (patient), לא אומת
+    assert crops["sender"] == (None, False)                         # אין אזור לשולח
 
 
 def test_delete_all_leaves_nothing_in_db_or_on_disk(conn, tmp_path):

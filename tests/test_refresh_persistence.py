@@ -128,9 +128,11 @@ def test_page_images_and_crops_come_back_after_a_refresh(db):
     store = process(db, pages)
     image = b"\xff\xd8\xff" + b"0" * 64                                    # לא JPEG תקין: החיתוך נכשל בשקט
     page_store.write(store.upload_id, 1, image)
-    repo.save_page_regions(db, store.upload_id, 1, {"id": [0.1, 0.2, 0.6, 0.3]})
+    repo.save_page_regions(db, store.upload_id, 1, {"id": {"fr": [0.1, 0.2, 0.6, 0.3], "verified": True}})
     run = service.load_run(db, store.token)
     assert run["images"] == {1: image} and (1, "id") in run["field_crops"]
+    crop, verified = run["field_crops"][(1, "id")]
+    assert crop is None and verified is True                              # התמונה לא JPEG תקין: החיתוך נכשל, המאומד נשאר
     at = app(store.token)
     assert not at.exception and at.session_state["images"] == {1: image}
 

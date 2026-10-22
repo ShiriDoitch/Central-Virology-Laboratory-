@@ -67,17 +67,26 @@ def name_suggestions(cell: Cell, key: str | None = None) -> list[str]:
     return out
 
 
-# לאיזה שדה יש מושג "אזור בטופס" בכלל (ולכן נסיון אימות, אחרת העמוד המלא בלי שום ניסיון): שמות ות"ז, מרכזי, התחייבות,
+# לאיזה שדה יש מושג "אזור בטופס" בכלל (ולכן נסיון אימות/קירוב, אחרת העמוד המלא בלי שום ניסיון): שמות ות"ז, מרכזי, התחייבות,
 # תאריך. שולח: אין אזור, אין נסיון אימות, ואין שינוי בהודעה הקיימת ("אין חיתוך זמין לשדה הזה").
 FIELD_REGION = {"first_name": "patient", "last_name": "patient", "id": "patient", "center": "barcode", "commitment": "commitment",
                 "date": "receipt"}
 
-# ראיה שלא אומתה מקומית לעולם לא מוצגת כסימון/חיתוך (CLAUDE.md: "המודל מתאר, הקוד מחליט" חל גם על תצוגת הראיה):
-# box שהמודל "הצהיר" עליו (patient_box / barcode_box / commitment_box / receipt_box) יכול להצביע על מקום שגוי בעמוד
-# (למשל ברקוד אחר), והבודקת מאשרת לפי התמונה - תמונה שגויה גרועה מהיעדר תמונה. האימות היחיד שיש היום: מספר שפוענח
-# מקומית מברקוד (src/barcode.py, בלי API) ושווה בדיוק לערך שהוחלט; אין עוד הסתמכות על ה-box של המודל לתצוגה (pipeline.py
-# עדיין משתמש בו לחיתוך שנשלח למעבר השני - זה לא השתנה). ערך שלא נמצא בשום ברקוד: בלי חיתוך, בלי סימון, העמוד המלא
-# עם ההערה NOT_VERIFIED_NOTE.
+# שדות שה"אזור" שלהם הוא במהותו תלוי בזיהוי ברקוד בין כמה ברקודים אפשריים בעמוד (region="barcode"): ה-box שהמודל
+# "הצהיר" עליו יכול להצביע על ברקוד אחר בעמוד (למשל תאריך הנפקה) ולא על הברקוד הנכון - זו בדיוק התקלה שתוקנה ב-dae05f5.
+# לכן לשדות האלה בלבד, בלי אימות מקומי (ברקוד שפוענח ושווה לערך), אין נפילה לאזור המשוער: העמוד המלא בלי סימון.
+NO_APPROX_REGION = {"center"}
+
+# הערה כשהאזור שמוצג הוא הצהרת המודל בלבד ולא עבר שום אימות מקומי (שם, ת"ז, תאריך, התחייבות בלי ברקוד תואם): מוצג
+# בכוונה (המודל מתאר, הקוד מחליט רק על הצבע/הדגל - לא על תצוגת הראיה), כדי שלכרטיס הבדיקה יהיה משהו להראות, אבל
+# מסומן בבירור שהוא לא נבדק.
+APPROX_NOTE = "אזור משוער מהטופס (לא אומת מקומית), יש לבדוק מול הטופס"
+
+# ראיה שלא אומתה מקומית ושה"אזור" שלה תלוי בזיהוי ברקוד (NO_APPROX_REGION) לעולם לא מוצגת כסימון/חיתוך (CLAUDE.md:
+# "המודל מתאר, הקוד מחליט" חל גם על תצוגת הראיה): box שהמודל "הצהיר" עליו יכול להצביע על מקום שגוי בעמוד (למשל ברקוד
+# אחר), והבודקת מאשרת לפי התמונה - תמונה שגויה גרועה מהיעדר תמונה. האימות היחיד שיש היום: מספר שפוענח מקומית מברקוד
+# (src/barcode.py, בלי API) ושווה בדיוק לערך שהוחלט; ערך שלא נמצא בשום ברקוד, לשדה כזה: בלי חיתוך, בלי סימון, העמוד
+# המלא עם ההערה הזאת.
 NOT_VERIFIED_NOTE = "המיקום המדויק לא ידוע, יש לחפש בטופס"
 
 
@@ -107,27 +116,45 @@ def verified_barcode_box(barcodes: list[dict] | None, applied_rotation: int, val
     return pad_fractions(rotated, margin=MARGINS["barcode"], min_pad=BARCODE_MIN_PAD)
 
 
-def field_fractions(page_res: dict, key: str, value: str | None = None) -> tuple[float, float, float, float] | None:
-    """האזור המאומת מקומית לשדה (ראו verified_barcode_box), או None: לשדה הזה אין מושג אזור כלל (FIELD_REGION), או
-    שאין אימות מקומי לערך שהוחלט (גם אם למודל "יש box" - הוא לא נבדק ולא מוצג). value = הערך שהוחלט לשדה; None = בלי
-    ניסיון אימות (למשל כש-value עדיין לא ידוע בנקודה הזאת)."""
+def model_box_fractions(page_res: dict, key: str) -> tuple[float, float, float, float] | None:
+    """האזור שהמודל "הצהיר" עליו לשדה (patient_box / barcode_box / commitment_box / receipt_box), כפי שנשמר
+    ב-pipeline.py לצורך חיתוך המעבר השני. לא מאומת בשום דרך מקומית: ראיה משוערת בלבד (ראו APPROX_NOTE)."""
+    region = FIELD_REGION.get(key)
+    if region == "patient":
+        return name_row_fractions(page_res)
+    used = ((page_res.get("boxes") or {}).get(region) or {}) if region else {}
+    return tuple(used["fractions"]) if used.get("fractions") else None
+
+
+def field_fractions(page_res: dict, key: str, value: str | None = None) -> tuple[tuple[float, float, float, float] | None, bool]:
+    """(אזור, מאומת) לשדה. מאומת=True: אזור שפוענח מברקוד מקומי ושווה בדיוק לערך (verified_barcode_box), כמו קודם.
+    מאומת=False עם אזור: לשדה שאינו תלוי בזיהוי ברקוד בין כמה אפשרויות (לא ב-NO_APPROX_REGION), האזור שהמודל הצהיר
+    עליו (model_box_fractions) - קירוב בלבד, מוצג עם APPROX_NOTE. (None, False): לשדה הזה אין מושג אזור כלל
+    (FIELD_REGION), או שהוא תלוי-ברקוד (NO_APPROX_REGION) ולא אומת - בכוונה בלי נפילה לאזור המודל (ראו NO_APPROX_REGION:
+    זו בדיוק התקלה שתוקנה ב-dae05f5). value = הערך שהוחלט לשדה; None = בלי ניסיון אימות (value עדיין לא ידוע)."""
     if not FIELD_REGION.get(key):
-        return None
+        return None, False
     applied = (page_res.get("rotation") or {}).get("applied") or 0
-    return verified_barcode_box(page_res.get("barcodes"), applied, value)
+    verified = verified_barcode_box(page_res.get("barcodes"), applied, value)
+    if verified:
+        return verified, True
+    if key in NO_APPROX_REGION:
+        return None, False
+    return model_box_fractions(page_res, key), False
 
 
-def field_crop(pdf_path: str, page_res: dict, key: str, value: str | None = None) -> bytes | None:
-    """JPEG של האזור המאומת שממנו נקרא השדה, מרונדר מחדש מה-PDF הנקי ברזולוציה גבוהה, עם אותו סיבוב שהוחל על העמוד.
-    None = אין אזור מאומת לשדה הזה: המסך מציג את העמוד המלא, בלי סימון שלא אומת."""
+def field_crop(pdf_path: str, page_res: dict, key: str, value: str | None = None) -> tuple[bytes | None, bool]:
+    """(חיתוך, מאומת) של האזור שממנו נקרא השדה, מרונדר מחדש מה-PDF הנקי ברזולוציה גבוהה, עם אותו סיבוב שהוחל על העמוד.
+    (None, False) = אין שום אזור להצגה (לא מאומת ולא משוער, או שהרינדור נכשל): המסך מציג את העמוד המלא."""
     try:
-        fr = field_fractions(page_res, key, value)
+        fr, verified = field_fractions(page_res, key, value)
         if not fr:
-            return None
+            return None, False
         applied = (page_res.get("rotation") or {}).get("applied") or 0
-        return review_crop(lambda f: render_region(pdf_path, page_res["page"], f, scale=NAME_CROP_SCALE, rotation=applied), fr)
+        crop = review_crop(lambda f: render_region(pdf_path, page_res["page"], f, scale=NAME_CROP_SCALE, rotation=applied), fr)
+        return crop, verified
     except Exception:
-        return None
+        return None, False
 
 
 def review_crop(render, fr: tuple[float, float, float, float]) -> bytes:
@@ -148,25 +175,27 @@ def review_crop(render, fr: tuple[float, float, float, float]) -> bytes:
     return jpeg
 
 
-def stored_field_fractions(page_res: dict, values: dict[str, str | None] | None = None) -> dict[str, list[float]]:
-    """אזור מאומת מקומית לכל שדה (שברים 0..1 של העמוד אחרי הסיבוב), לשמירה לצד תמונת העמוד: ראיה לכרטיס הרשומה ולמסך
-    הבדיקה המונחית אחרי רענון, בלי PDF זמין (אין יותר מעבר על box שהמודל דיווח). שדה בלי אימות לא נכלל (ולא רק שולח/תאריך).
-    values = הערך שהוחלט לכל שדה (בעמוד עם כמה התחייבויות: הערך של השורה הראשונה - מרכזי ופרטי המטופל משותפים לכל השורות
-    באותו עמוד; מגבלה ידועה לגבי התחייבות עצמה, שכבר הייתה קיימת: אזור אחד נשמר לעמוד, לא לפי שורה)."""
+def stored_field_fractions(page_res: dict, values: dict[str, str | None] | None = None) -> dict[str, dict]:
+    """אזור כל שדה (שברים 0..1 של העמוד אחרי הסיבוב, מאומת או משוער) לשמירה לצד תמונת העמוד: ראיה לכרטיס הרשומה ולמסך
+    הבדיקה המונחית אחרי רענון, בלי PDF זמין (אין יותר מעבר על box שהמודל דיווח - האזור שנשמר כאן הוא כל מה שיש).
+    שדה בלי שום אזור (לא מאומת ולא משוער) לא נכלל. כל ערך: {"fr": [x0,y0,x1,y1], "verified": bool}. values = הערך
+    שהוחלט לכל שדה (בעמוד עם כמה התחייבויות: הערך של השורה הראשונה - מרכזי ופרטי המטופל משותפים לכל השורות באותו
+    עמוד; מגבלה ידועה לגבי התחייבות עצמה, שכבר הייתה קיימת: אזור אחד נשמר לעמוד, לא לפי שורה)."""
     values = values or {}
     out = {}
     for key in FIELD_REGION:
         try:
-            fr = field_fractions(page_res, key, values.get(key))
+            fr, verified = field_fractions(page_res, key, values.get(key))
         except Exception:
-            fr = None
+            fr, verified = None, False
         if fr:
-            out[key] = [round(float(x), 4) for x in fr]
+            out[key] = {"fr": [round(float(x), 4) for x in fr], "verified": verified}
     return out
 
 
 def field_crop_from_image(image: bytes, fractions: list[float] | tuple | None) -> bytes | None:
-    """חיתוך השדה מתמונת העמוד השמורה (JPEG אחרי הסיבוב). None אם אין אזור או שהחיתוך נכשל."""
+    """חיתוך השדה מתמונת העמוד השמורה (JPEG אחרי הסיבוב), מאזור כלשהו (מאומת או משוער - הקריאה הזאת לא מבדילה).
+    None אם אין אזור או שהחיתוך נכשל."""
     if not fractions:
         return None
     try:

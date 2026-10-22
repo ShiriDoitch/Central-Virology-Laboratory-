@@ -32,10 +32,10 @@ def test_commitment_review_crop_is_wider_and_taller_than_the_verified_barcode_bo
 
     page = {"page": 1, "rotation": {"applied": 0},
             "barcodes": [{"format": "Code128", "text": "50364186", "box": [0.3, 0.6, 0.5, 0.62]}]}
-    model_fr = field_fractions(page, "commitment", "50364186")
-    assert model_fr is not None
+    model_fr, verified = field_fractions(page, "commitment", "50364186")
+    assert model_fr is not None and verified is True
     old = render_region(str(PDF), page["page"], model_fr, scale=3.0, rotation=0) if PDF.exists() else None
-    new = field_crop(str(PDF) if PDF.exists() else "no_such_file.pdf", page, "commitment", "50364186")
+    new, _verified = field_crop(str(PDF) if PDF.exists() else "no_such_file.pdf", page, "commitment", "50364186")
     if old is None or not new:
         pytest.skip("no sample pdf")
     w_old, h_old = Image.open(io.BytesIO(old)).size
@@ -47,7 +47,7 @@ def test_page_with_a_barcode_near_the_edge_the_review_window_is_shifted_inward_n
     """תיבת ברקוד מאומתת שצמודה לקצה העמוד (ימין): החלון לבדיקה מתרחב לכיוון הפנים ולא נחתך, ולא קטן מהתיבה המקורית."""
     page = {"page": 1, "rotation": {"applied": 0},
             "barcodes": [{"format": "Code128", "text": "260005102632", "box": [0.9, 0.3, 0.995, 0.34]}]}
-    x0, y0, x1, y1 = field_fractions(page, "commitment", "260005102632")
+    (x0, y0, x1, y1), _verified = field_fractions(page, "commitment", "260005102632")
     rx0, ry0, rx1, ry1 = review_fractions((x0, y0, x1, y1))
     assert rx1 <= 1.0 and rx0 < x0                                          # לא נחתך בקצה, והורחב פנימה
     assert (rx1 - rx0) >= (x1 - x0) and (ry1 - ry0) >= (y1 - y0) * 1.3

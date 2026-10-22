@@ -161,7 +161,8 @@ def list_uploads(conn) -> list[dict]:
 # ---------- אזורי השדות בתמונת העמוד השמורה ----------
 
 def save_page_regions(conn, upload_id: int, page_no: int, regions: dict) -> None:
-    """שברים (0..1) של אזור כל שדה בתמונת העמוד השמורה (אחרי הסיבוב). מספרים בלבד, בלי נתוני מטופל."""
+    """אזור כל שדה בתמונת העמוד השמורה (אחרי הסיבוב): {שדה: {"fr": [x0,y0,x1,y1] שברים 0..1, "verified": bool}}.
+    מספרים ודגל בוליאני בלבד, בלי נתוני מטופל."""
     with conn:
         conn.execute("INSERT INTO page_regions (upload_id, page_no, regions_json) VALUES (?,?,?) "
                      "ON CONFLICT(upload_id, page_no) DO UPDATE SET regions_json=excluded.regions_json",

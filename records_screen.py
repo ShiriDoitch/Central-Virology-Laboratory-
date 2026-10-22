@@ -11,7 +11,7 @@ import evidence_view
 import review_screen
 from src import guided_review, service, ui_text
 from src import ui_theme as ui
-from src.confirm import FIELD_REGION, NOT_VERIFIED_NOTE, flag_chips_html, md_text
+from src.confirm import APPROX_NOTE, FIELD_REGION, NOT_VERIFIED_NOTE, flag_chips_html, md_text
 from src.export import COLUMNS, FIELD_KEYS, skip_reason
 from src.privacy import log_server_error
 
@@ -392,9 +392,11 @@ def render_detail(conn, rid: int, he_flag) -> None:
                         st.markdown(ui.field_head(TITLES[key], state), unsafe_allow_html=True)
                         st.text_input(TITLES[key], key=f"rec_in_{rid}_{key}", label_visibility="collapsed")
                     render_field_notes(fs, key, he_flag)
-                    if crops.get(key):
+                    crop, verified = crops.get(key, (None, False))
+                    if crop:
                         with st.expander("האזור בטופס"):
-                            evidence_view.render_crop_and_page(crops[key], None, rec["page_no"], zoom_key=f"rec_zoom_{rid}_{key}")
+                            evidence_view.render_crop_and_page(crop, None, rec["page_no"], zoom_key=f"rec_zoom_{rid}_{key}",
+                                                               note=None if verified else APPROX_NOTE)
                     elif FIELD_REGION.get(key):
                         st.caption(NOT_VERIFIED_NOTE)
                     if fs["cell_confirmed"] and not locked:

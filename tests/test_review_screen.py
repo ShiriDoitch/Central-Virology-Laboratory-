@@ -226,7 +226,7 @@ def test_finishing_the_whole_queue_shows_the_end_screen(db):
 def test_the_saved_page_is_shown_with_the_region_marked(db):
     uid = seed(db, {1: [cells(id=ORANGE)]})
     page_store.write(uid, 1, jpeg())
-    repo.save_page_regions(db, uid, 1, {"id": [0.1, 0.2, 0.6, 0.3]})
+    repo.save_page_regions(db, uid, 1, {"id": {"fr": [0.1, 0.2, 0.6, 0.3], "verified": True}})
     at = start_review(records_app())
     assert at.toggle(key="rv_full_page").value is False                  # ברירת המחדל: החיתוך של האזור
     assert "name-zoom" in texts(at) and "pg-mark" not in texts(at)
@@ -238,7 +238,7 @@ def test_the_saved_page_is_shown_with_the_region_marked(db):
 def test_a_field_without_a_saved_region_falls_back_to_the_whole_page(db):
     uid = seed(db, {1: [cells(sender=ORANGE)]})
     page_store.write(uid, 1, jpeg())
-    repo.save_page_regions(db, uid, 1, {"id": [0.1, 0.2, 0.6, 0.3]})     # לגורם שולח אין אזור
+    repo.save_page_regions(db, uid, 1, {"id": {"fr": [0.1, 0.2, 0.6, 0.3], "verified": True}})     # לגורם שולח אין אזור
     at = start_review(records_app())
     assert "pg-mark" not in texts(at)
     assert any("אין אזור שמור" in c.value for c in at.caption)

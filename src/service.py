@@ -100,18 +100,19 @@ class Persister:
 
 
 def run_crops(conn, upload_id: int, page_no: int, image: bytes) -> dict:
-    """חיתוך מאומת לכל שדה בעמוד מתמונת העמוד השמורה, באותה לוגיקה של כרטיס הרשומה. אחרי רענון אין יותר PDF זמני
+    """(חיתוך, מאומת) לכל שדה בעמוד מתמונת העמוד השמורה, באותה לוגיקה של כרטיס הרשומה. אחרי רענון אין יותר PDF זמני
     לחתוך ממנו, ולכן החיתוך נעשה מהתמונה. מפתח = (עמוד, שדה): שדות שונים יכולים להיות מאומתים (או לא) בנפרד, גם אם
     הם היו חולקים אזור אחד לפי המודל (למשל שם ות"ז)."""
     out: dict = {}
     by_fractions: dict[tuple | None, bytes | None] = {}
-    for key, fractions in (repo.get_page_regions(conn, upload_id, page_no) or {}).items():
+    for key, region in (repo.get_page_regions(conn, upload_id, page_no) or {}).items():
         if not FIELD_REGION.get(key):
             continue
-        token = tuple(fractions) if fractions else None
+        fr = region.get("fr") if region else None
+        token = tuple(fr) if fr else None
         if token not in by_fractions:
-            by_fractions[token] = field_crop_from_image(image, fractions)
-        out[(page_no, key)] = by_fractions[token]
+            by_fractions[token] = field_crop_from_image(image, fr)
+        out[(page_no, key)] = (by_fractions[token], bool(region and region.get("verified")))
     return out
 
 
@@ -362,21 +363,22 @@ def delete_upload_images(upload_id: int) -> int:
     return page_store.delete_upload(upload_id)
 
 
-def record_images(conn, record: dict) -> tuple[bytes | None, dict[str, bytes | None]]:
-    """(תמונת העמוד השמורה, חיתוך לכל שדה) לרשומה. אין תמונה: (None, {}) והכרטיס מציג הודעה ועריכה ממשיכה לעבוד.
-    חיתוך לפי אזור השדה שנשמר, באותה לוגיקה כמו במסך העיבוד (confirm.review_crop)."""
+def record_images(conn, record: dict) -> tuple[bytes | None, dict[str, tuple[bytes | None, bool]]]:
+    """(תמונת העמוד השמורה, (חיתוך, מאומת) לכל שדה) לרשומה. אין תמונה: (None, {}) והכרטיס מציג הודעה ועריכה ממשיכה
+    לעבוד. חיתוך לפי אזור השדה שנשמר, באותה לוגיקה כמו במסך העיבוד (confirm.review_crop)."""
     image = page_store.read(record["upload_id"], record["page_no"])
     if image is None:
         return None, {}
     regions = repo.get_page_regions(conn, record["upload_id"], record["page_no"]) or {}
-    crops: dict[str, bytes | None] = {}
+    crops: dict[str, tuple[bytes | None, bool]] = {}
     by_region: dict[tuple, bytes | None] = {}
     for key in FIELD_KEYS:
-        fr = regions.get(key)
+        region = regions.get(key)
+        fr = region.get("fr") if region else None
         token = tuple(fr) if fr else None
         if token not in by_region:
             by_region[token] = field_crop_from_image(image, fr)
-        crops[key] = by_region[token]
+        crops[key] = (by_region[token], bool(region and region.get("verified")))
     return image, crops
 
 
@@ -428,15 +430,16 @@ def green_edited_cells(conn, limit: int = 20) -> list[dict]:
     return repo.green_edited_cells(conn, limit)
 
 
-def review_cell_image(conn, record: dict, key: str) -> tuple[bytes | None, bytes | None, tuple | None]:
-    """לתא אחד במסך הבדיקה: (תמונת העמוד השמורה, חיתוך האזור של השדה, שברי האזור לסימון על העמוד).
-    אין תמונה שמורה (לא נשמרה, או נמחקה אחרי אישור העמוד): (None, None, None) והמסך מציג הודעה."""
+def review_cell_image(conn, record: dict, key: str) -> tuple[bytes | None, bytes | None, tuple | None, bool]:
+    """לתא אחד במסך הבדיקה: (תמונת העמוד השמורה, חיתוך האזור של השדה, שברי האזור לסימון על העמוד, מאומת).
+    אין תמונה שמורה (לא נשמרה, או נמחקה אחרי אישור העמוד): (None, None, None, False) והמסך מציג הודעה."""
     image = page_store.read(record["upload_id"], record["page_no"])
     if image is None:
-        return None, None, None
-    stored = (repo.get_page_regions(conn, record["upload_id"], record["page_no"]) or {}).get(key)
-    fractions = tuple(stored) if stored else None
-    return image, field_crop_from_image(image, fractions), fractions
+        return None, None, None, False
+    region = (repo.get_page_regions(conn, record["upload_id"], record["page_no"]) or {}).get(key)
+    fr = region.get("fr") if region else None
+    fractions = tuple(fr) if fr else None
+    return image, field_crop_from_image(image, fractions), fractions, bool(region and region.get("verified"))
 
 
 def delete_all_data(conn) -> dict:
