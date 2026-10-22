@@ -2,9 +2,9 @@
 from datetime import date
 
 from .rules import (
-    F_MISSING_REQUIRED, F_MODEL_NOT_FORM, F_NOT_RECOGNIZED_AS_FORM, H_FULL_NAME_SPLIT, commitment_from_region,
-    commitment_numbers, decide_center, decide_id, decide_name, decide_receipt_date, expand_rows, has_form_signals,
-    split_full_name_fields, split_full_name_regions, verify_commitments,
+    F_MISSING_REQUIRED, F_MODEL_NOT_FORM, F_NOT_RECOGNIZED_AS_FORM, H_FULL_NAME_SPLIT, apply_swap_guard,
+    commitment_from_region, commitment_numbers, decide_center, decide_id, decide_name, decide_receipt_date,
+    expand_rows, has_form_signals, split_full_name_fields, split_full_name_regions, verify_commitments,
 )
 from .schema import PageExtraction
 from .senders import decide_sender
@@ -48,6 +48,7 @@ def page_rows(result: dict, today: date | None = None, regions: dict | None = No
         "date": decide_receipt_date(page.dates, today, regions=regions, require_two_readings=True),
         "sender": decide_sender(page.sender_mentions),
     }
+    base["center"], commitments = apply_swap_guard(base["center"], commitments, regions)
     if split1 or split2:
         for key in ("first_name", "last_name"):
             d = base[key]

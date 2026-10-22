@@ -131,3 +131,20 @@ spelling for these two institutions; matching behaviour itself did not change).
 Treat this as a partial, contaminated-sample measurement, not evidence of out-of-sample accuracy. To get an
 actual blind read: re-run pages 7-22 (or at minimum 15-22) once the `gemini-3.6-flash` daily budget resets,
 under the same one-shot, no-retry discipline, and report that batch separately from this one.
+
+## Addendum (2026-10-22): center/commitment swap guard, re-scored against this run (no new model calls)
+
+A separate critical bug (not found by this run; found on a new, unrelated upload) let the center and
+commitment numbers come out **both green and swapped** when the second pass's own region-level fields
+disagreed with their own purpose (the "center" field's own label said "commitment", and vice versa). The fix
+(`src/rules.py`: `_center_groups`, `verify_commitments`, and a new `swap_claim_sets`/`apply_swap_guard` safety
+net called from `page_rows`) is detailed in `CLAUDE.md` section 25.
+
+Re-scoring this run's saved pages 1-6 (`outputs/part2_final`, offline, no API calls) against `truth_part2.xlsx`:
+zero cells changed category for every field except `center`, where one cell (page 1) that was `confident_ok`
+(green, correct) moved to `orange_ok` on an early version of the guard — investigated and found to be a false
+positive caused by trusting the first pass's whole-page number labels; the guard was narrowed to use only the
+second pass's own region fields as evidence, and after narrowing this run's numbers are **unchanged**
+(identical before/after, including the single `center` `confident_ok` cell). No cell in this run exhibited the
+swap bug itself (center and commitment were never both green-and-crossed here); the bug is specific to a form
+layout not present in pages 1-6.

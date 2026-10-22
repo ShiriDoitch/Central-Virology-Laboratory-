@@ -41,6 +41,9 @@ F_DATE_KIND_UNCLEAR = "date_kind_unclear"
 F_WEAK_LABEL = "weak_label"
 F_COMMITMENT_MISMATCH = "commitment_mismatch"
 F_COMMITMENT_SINGLE_SOURCE = "commitment_single_source"
+# מספר שבראיות הגולמיות של העמוד נטען גם כמרכזי וגם כהתחייבות (swap_claim_sets): סימן שהאזורים/התוויות הוחלפו
+# בין השדות (למשל חיתוך "התחייבות" שבפועל מכיל את הברקוד עם "מרכזי" ולהפך). לא בוחרים, שני השדות כתומים.
+F_CENTER_COMMITMENT_SWAP = "center_commitment_swap"
 F_MODEL_NOT_FORM ="model_says_not_commitment_form"
 F_NOT_RECOGNIZED_AS_FORM = "not_recognized_as_form"   # המודל סימן "לא טופס" אבל יש סימני טופס: שורה אחת, כל השדות כתומים
 F_COMMITMENT_FROM_REGION = "commitment_from_region"   # נקרא רק מחיתוך אזור ההתחייבות (מעבר 2), בלי מועמד מתויג במעבר 1: תמיד כתום
@@ -64,6 +67,11 @@ H_TWO_READS = "two_readings_agree"       # מעבר ראשון + מעבר שני
 
 COMMITMENT_LABEL_WORDS = ("התחייבות", "דרישה", "דגימה", "אסמכתא")
 MIN_FALLBACK_DIGITS = 4  # בטבלת האמת מספר ההתחייבות הקצר ביותר הוא 4 ספרות
+
+
+def _label_says(label: str | None, words: tuple[str, ...]) -> bool:
+    return bool(label) and any(w in label for w in words)
+
 # תוויות שמעידות שהמספר אינו מספר התחייבות (למשל "מקרה:" בעמוד 1 של eval_extra): קריאת אזור ההתחייבות
 # מהמעבר השני לא מתקבלת כשזו התווית שלה.
 NON_COMMITMENT_LABEL_WORDS = ("מקרה", "מבטח", "מבוטח", "ביטוח", "קופ", "ביקור", "מחלקה", "רופא", "טלפון", "נייד",
@@ -773,12 +781,18 @@ def verify_commitments(commitments: list[Decision], regions: dict | None) -> lis
     - שתי הקריאות מסכימות על הספרות: ללא שינוי (ירוק רק אם אין דגל אחר, למשל weak_label).
     - הקריאות שונות: כתום, ערך ריק, שני הערכים ב-alternatives, דגל commitment_mismatch (לא בוחרים).
     - המעבר השני לא קרא (לא רץ, אין חיתוך, region_ok=false, אין ספרות): כתום, commitment_single_source.
-    - כמה התחייבויות בעמוד וקריאה שנייה אחת: רק זו שמסכימה עם הקריאה מאומתת, האחרות single_source."""
+    - כמה התחייבויות בעמוד וקריאה שנייה אחת: רק זו שמסכימה עם הקריאה מאומתת, האחרות single_source.
+    - הקריאה השנייה מסכימה על הספרות אבל התווית שהיא עצמה קראה ליד המספר אומרת "מרכזי"/"מרכז" (לא תווית
+      התחייבות): זו לא הסכמה עצמאית אלא סימן שאזור ההתחייבות בפועל מכיל את מה שהוא בעמוד המרכזי (האזורים
+      הוחלפו). לא מאשרים: דגל center_commitment_swap (הטיפול המלא, כולל הצד של המרכזי, ב-apply_swap_guard)."""
     p2 = None
+    p2_label = None
     if regions and regions.get("ok"):
         c = regions.get("commitment") or {}
         if c.get("region_ok"):
-            p2 = normalize_digits((c.get("number") or {}).get("value"))
+            num = c.get("number") or {}
+            p2 = normalize_digits(num.get("value"))
+            p2_label = num.get("label")
     others = {normalize_digits(d.value) for d in commitments if d.value}
     out: list[Decision] = []
     for d in commitments:
@@ -786,7 +800,9 @@ def verify_commitments(commitments: list[Decision], regions: dict | None) -> lis
             out.append(d)
             continue
         digits = normalize_digits(d.value)
-        if p2 is not None and digits == p2:
+        if p2 is not None and digits == p2 and is_center_label(p2_label):
+            out.append(d.model_copy(update={"flags": _dedupe([*d.flags, F_CENTER_COMMITMENT_SWAP])}))
+        elif p2 is not None and digits == p2:
             out.append(d)
         elif p2 is None or (len(commitments) > 1 and p2 in others):
             out.append(d.model_copy(update={"flags": _dedupe([*d.flags, F_COMMITMENT_SINGLE_SOURCE])}))
@@ -910,6 +926,79 @@ def apply_center_barcode(d: Decision, barcodes: list[dict] | None, exclude: set[
     return d.model_copy(update=update)
 
 
+def swap_claim_sets(regions: dict | None) -> tuple[set[str], set[str]]:
+    """שתי קבוצות ספרות, מהראיות הגולמיות של אזורי המעבר השני בלבד (בלי קשר להחלטה הסופית של
+    decide_center/commitment_numbers): מספרים שאיזושהי ראיה טוענת שהם "מרכזי", ומספרים שאיזושהי ראיה טוענת
+    שהם "התחייבות". ראיה = שדה מבנה ייעודי (central_number, commitment.number: "טוען" לשדה שהוא נמצא בו תמיד,
+    גם כשהתווית שהמודל עצמו קרא לידו באותו חיתוך סותרת זאת, סימן שהאזורים הוחלפו), או תווית על מספר אחר
+    שנקרא באותו חיתוך (numbers של אזור הברקוד). חפיפה בין שתי הקבוצות = חשד להיפוך בין השדות, בלי קשר לאיזה
+    מהם "ניצח" בפועל (apply_swap_guard).
+    בכוונה **לא** נבדקת כאן הרשימה הפתוחה numbers של המעבר הראשון (קריאת העמוד השלם): היא נוטה לתייג את שני
+    המספרים האלה בטעות גם כשהמעבר השני קרא את שניהם נכון ובעצמו וברקוד מקומי מאששים זאת (נמדד על
+    outputs/part2_final עמוד 1: תווית מעבר 1 שגויה הייתה מורידה תא ירוק-נכון לכתום בלי שום ראיה סותרת
+    באמת). ראיה מהמעבר השני (ואזור הברקוד/קבלה) חזקה בהרבה: היא קריאה ממוקדת של אותו חיתוך, לא קריאה
+    כללית של העמוד השלם."""
+    center_claims: set[str] = set()
+    commitment_claims: set[str] = set()
+    if not (regions and regions.get("ok")):
+        return center_claims, commitment_claims
+    barcode = regions.get("barcode") or {}
+    if barcode.get("region_ok"):
+        central = barcode.get("central_number") or {}
+        digits = normalize_digits(central.get("value"))
+        if digits:
+            center_claims.add(digits)                                      # שדה מבנה: תמיד טענה למרכזי
+            if _label_says(central.get("label"), COMMITMENT_LABEL_WORDS):
+                commitment_claims.add(digits)                               # אבל התווית שנקראה אומרת התחייבות
+        for item in barcode.get("numbers") or []:
+            digits = normalize_digits((item or {}).get("value"))
+            if digits and _label_says((item or {}).get("label"), COMMITMENT_LABEL_WORDS):
+                commitment_claims.add(digits)
+    commitment_region = regions.get("commitment") or {}
+    if commitment_region.get("region_ok"):
+        num = commitment_region.get("number") or {}
+        digits = normalize_digits(num.get("value"))
+        if digits:
+            commitment_claims.add(digits)                                  # שדה מבנה: תמיד טענה להתחייבות
+            if is_center_label(num.get("label")):
+                center_claims.add(digits)                                  # אבל התווית שנקראה אומרת מרכזי
+    receipt = regions.get("receipt") or {}
+    if receipt.get("region_ok"):
+        digits = normalize_digits((receipt.get("central_number") or {}).get("value"))
+        if digits:
+            center_claims.add(digits)
+    return center_claims, commitment_claims
+
+
+def apply_swap_guard(center: Decision, commitments: list[Decision],
+                      regions: dict | None) -> tuple[Decision, list[Decision]]:
+    """רשת הגנה אחרונה, בלתי תלויה בפנים של decide_center/verify_commitments: אם הערך שנבחר למרכזי או
+    להתחייבות כלשהי הוא מספר שנטען (swap_claim_sets) גם כמרכזי וגם כהתחייבות באותו עמוד, הוא לא ירוק
+    (גם אם שום דגל אחר לא נדלק): כתום, F_CENTER_COMMITMENT_SWAP, והמספר האחר בחפיפה ב-alternatives."""
+    center_claims, commitment_claims = swap_claim_sets(regions)
+    swapped = center_claims & commitment_claims
+    if not swapped:
+        return center, commitments
+    if center.value and normalize_digits(center.value) in swapped:
+        others = sorted(swapped - {normalize_digits(center.value)})
+        center = center.model_copy(update={"flags": _dedupe([*center.flags, F_CENTER_COMMITMENT_SWAP]),
+                                            "alternatives": _dedupe([*center.alternatives, *others])})
+    elif not center.value:
+        # המרכזי ריק ממילא (למשל decide_center כבר דחה את שני המועמדים הסותרים): עדיין עדיף להציג את שני
+        # המספרים כהצעה עם סיבה מפורשת, ולא ריק סתמי בלי רמז למה
+        center = center.model_copy(update={"flags": _dedupe([*center.flags, F_CENTER_COMMITMENT_SWAP]),
+                                            "alternatives": _dedupe([*center.alternatives, *sorted(swapped)])})
+    new_commitments: list[Decision] = []
+    for c in commitments:
+        digits = normalize_digits(c.value)
+        if digits and digits in swapped:
+            others = sorted(swapped - {digits})
+            c = c.model_copy(update={"flags": _dedupe([*c.flags, F_CENTER_COMMITMENT_SWAP]),
+                                      "alternatives": _dedupe([*c.alternatives, *others])})
+        new_commitments.append(c)
+    return center, new_commitments
+
+
 def _barcode_numbers(regions: dict | None) -> tuple[list[NumberCandidate], list[tuple[str, Field_]]]:
     """מספרי אזור הברקוד של המעבר השני, ו-central_number שלו (ספרות בלבד, עם השדה המקורי)."""
     from .schema import RegionsExtraction  # ייבוא מקומי: rules לא תלוי במעבר שני כשאין צורך
@@ -934,14 +1023,24 @@ def _barcode_numbers(regions: dict | None) -> tuple[list[NumberCandidate], list[
 
 
 def _center_groups(numbers: list[NumberCandidate], central: list[tuple[str, Field_]]) -> dict[str, list[tuple[str, float]]]:
-    """מועמדים עם תווית מרכזי: ערך -> [(מקור, ביטחון)]."""
+    """מועמדים עם תווית מרכזי: ערך -> [(מקור, ביטחון)].
+    central (central_number של אזור הברקוד/הקבלה במעבר השני) הוא שדה מבנה ולא תווית טקסט, ולכן ברירת המחדל
+    היא לאמץ אותו (המודל נשאל במפורש "המספר שהמילה 'מרכזי' כתובה לידו"). אבל כשהתווית שהמודל עצמו קרא ליד
+    אותו מספר אומרת "התחייבות/דרישה/דגימה/אסמכתא" ולא "מרכזי" (למשל חיתוך "ברקוד" שבפועל מכיל את תיבת
+    ההתחייבות, אחרי שהאזורים הוחלפו במעבר הראשון): זו לא תמיכה במרכזי אלא ראיה סותרת, ולא נכנס כמתויג.
+    גם בלי סתירה בתווית, שדה מבנה בלי תווית מרכזי משלו חייב אורך סביר למרכזי (config/center.json,
+    "barcode_match"): מועמד עם תווית מרכזי אמיתית לא תלוי באורך (CLAUDE.md), אבל אמון "כי זה השדה המבני"
+    לבדו לא יכול לעקוף גם סתירה בתווית וגם אורך בלתי סביר."""
     groups: dict[str, list[tuple[str, float]]] = {}
     for n in numbers:
         digits = normalize_digits(n.value)
         if digits and is_center_label(n.label):
             groups.setdefault(digits, []).append((n.source, n.confidence))
     for digits, f in central:
-        groups.setdefault(digits, []).append((f.source, f.confidence))
+        if is_center_label(f.label):
+            groups.setdefault(digits, []).append((f.source, f.confidence))
+        elif not _label_says(f.label, COMMITMENT_LABEL_WORDS) and in_center_range(digits, "barcode_match"):
+            groups.setdefault(digits, []).append((f.source, f.confidence))
     return groups
 
 
