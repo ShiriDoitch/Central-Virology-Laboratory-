@@ -77,30 +77,36 @@ def test_no_listener_still_logs(server_log):
     assert server_log == ["עובר למפתח גיבוי"]
 
 
-def test_retry_sequence_reports_attempts_waits_and_switches(gemini, monkeypatch, fake_time):
+def test_first_pass_reports_one_attempt_per_model_then_switches(gemini, monkeypatch):
+    """מעבר ראשון (22.10.2026): ניסיון אחד למודל, בלי המתנה על אותו מודל, ואז מיד המודל הבא."""
     set_models(monkeypatch, first="m1", fallbacks=["m2"])
     busy = lambda: errors.ServerError(503, {"error": {"message": "busy patient-123"}})
-    gemini(["a", "b"], {"a": [busy(), busy(), OK_JSON]})
-    monkeypatch.setattr(extractor.time, "sleep", fake_time.sleep)
+    gemini(["a"], {"a": [busy(), OK_JSON]})
+    sleeps: list[float] = []
+    monkeypatch.setattr(extractor.time, "sleep", sleeps.append)
     c = Collect()
     with status.listening(c):
         res = extractor.extract([b"img"])
-    assert res["ok"]
-    texts = [t for t in c.texts if "מכסה" not in t]               # המתנות מרווח המכסה בין קריאות נבדקות בנפרד (test_quota_interval_wait_is_reported)
-    assert texts == ["ממתין למודל (ניסיון 1 מתוך 4)", "המודל עמוס, מנסה שוב בעוד כ-3 שניות (ניסיון 2 מתוך 4)",
-                       "ממתין למודל (ניסיון 2 מתוך 4)", "המודל עמוס, מנסה שוב בעוד כ-8 שניות (ניסיון 3 מתוך 4)",
-                       "ממתין למודל (ניסיון 3 מתוך 4)"]
+    assert res["ok"] and res["model"] == "m2"
+    texts = [t for t in c.texts if "מכסה" not in t]                 # מרווח המכסה בין קריאות נבדק בנפרד (test_quota_interval_wait_is_reported)
+    assert texts == ["ממתין למודל (ניסיון 1 מתוך 1)", "עובר למודל גיבוי", "ממתין למודל (ניסיון 1 מתוך 1)"]
+    assert sleeps == []                                             # בלי המתנה כלשהי בין הניסיון הכושל למודל הבא
     assert "patient-123" not in " ".join(c.texts)
 
 
-def test_minute_quota_429_reports_wait(gemini, monkeypatch, fake_time):
-    set_models(monkeypatch, first="m1")
+def test_minute_quota_429_moves_on_without_waiting(gemini, monkeypatch):
+    """מעבר ראשון (22.10.2026): גם 429 של מגבלת דקה לא ממתין יותר - עובר מיד למודל/מפתח הבא (אין עוד מה להמתין בשביל)."""
+    set_models(monkeypatch, first="m1", fallbacks=["m2"])
     minute = lambda: errors.ClientError(429, {"error": {"message": "GenerateRequestsPerMinutePerProjectPerModel"}})
     gemini(["a"], {"a": [minute(), OK_JSON]})
+    sleeps: list[float] = []
+    monkeypatch.setattr(extractor.time, "sleep", sleeps.append)
     c = Collect()
     with status.listening(c):
-        assert extractor.extract([b"img"])["ok"]
-    assert "ממתין למכסה (כ-60 שניות)" in c.texts
+        res = extractor.extract([b"img"])
+    assert res["ok"] and res["model"] == "m2"
+    assert "ממתין למכסה (כ-60 שניות)" not in c.texts
+    assert extractor.QUOTA_WAIT_S not in sleeps
 
 
 def test_key_and_model_switch_events(gemini, monkeypatch):

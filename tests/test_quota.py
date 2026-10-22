@@ -207,15 +207,16 @@ def test_regions_invalid_json_is_not_retried(monkeypatch, no_real_sleep):
     assert client.models.calls == ["s1"]
 
 
-def test_first_pass_keeps_retry_and_fallback_among_small_models(monkeypatch, no_real_sleep):
+def test_first_pass_falls_back_among_small_models_after_one_attempt(monkeypatch, no_real_sleep):
+    """מעבר ראשון (22.10.2026): ניסיון אחד למודל, בלי המתנה, ואז מיד המודל הבא."""
     monkeypatch.setenv("GEMINI_API_KEY", "fake")
     set_models(monkeypatch, first="small-1", fallbacks=["small-2"], strong=["s1"])
     page = PageExtraction(is_commitment_form=True, page_quality="ok").model_dump_json()
-    client = FakeClient({"small-1": [BUSY_503()] * 4, "small-2": [page]})
+    client = FakeClient({"small-1": [BUSY_503()], "small-2": [page]})
     monkeypatch.setattr(extractor.genai, "Client", lambda **k: client)
     result = extractor.extract([b"img"])
     assert result["ok"] and result["model"] == "small-2"
-    assert client.models.calls == ["small-1"] * 4 + ["small-2"]            # ניסיון + 3 חוזרים, ואז המודל הבא
+    assert client.models.calls == ["small-1", "small-2"]                  # ניסיון אחד, ואז מיד המודל הבא
 
 
 def test_first_pass_chain_filters_out_strong_models(monkeypatch):

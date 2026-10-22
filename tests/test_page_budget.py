@@ -5,6 +5,7 @@ import pymupdf
 import pytest
 
 from src import extractor, pipeline, repo, service, upload
+from src.schema import PageExtraction
 from tests.conftest import set_models
 from tests.test_resilience import OK_JSON, claude  # noqa: F401  (fixture)
 
@@ -57,35 +58,49 @@ def hanging(monkeypatch, fake_time):
     return setup
 
 
-def test_pass1_stops_at_the_budget_across_attempts_models_and_keys(hanging, fake_time, claude, monkeypatch):
+def test_pass1_one_attempt_per_model_reaches_claude_within_the_default_budget(hanging, fake_time, claude, monkeypatch):
+    """התיקון המרכזי (22.10.2026): מעבר ראשון מנסה כל מודל פעם אחת בלבד, בלי המתנה על אותו מודל, ולכן גם כששני
+    המפתחות ושני המודלים תקועים, השרשרת המלאה (2 מודלים x 2 מפתחות x 28 שניות = 112) נכנסת בתוך תקציב ברירת
+    המחדל (180) ומשאירה זמן ל-Claude - במקום שהתקציב ייגמר באמצע הניסיונות החוזרים על המודל הראשון לבדו."""
+    set_models(monkeypatch, first="m1", fallbacks=["m2"])
+    calls = hanging(["a", "b"])
+    with extractor.page_budget(180) as state:
+        res = extractor.extract([b"img"])
+    assert res["ok"] and res["provider"] == "anthropic" and res["model"] == "claude-test"
+    assert calls == [("a", 28000), ("a", 28000), ("b", 28000), ("b", 28000)]   # ניסיון אחד לכל מודל/מפתח, בלי המתנה
+    assert len(claude) == 1 and not state.exceeded
+
+
+def test_pass1_still_stops_at_the_budget_when_it_is_too_tight_for_the_whole_chain(hanging, fake_time, claude, monkeypatch):
+    """תקציב הדוק מהרגיל עדיין עוצר באמצע ומסומן page_timeout: מודל/מפתח/Claude שלא הספיקו לא מקבלים הזדמנות."""
     set_models(monkeypatch, first="m1", fallbacks=["m2"])
     calls = hanging(["a", "b"])
     start = fake_time.t
-    with extractor.page_budget(180) as state:
+    with extractor.page_budget(70) as state:
         res = extractor.extract([b"img"])
     assert not res["ok"] and res["error_code"] == "page_timeout" and state.exceeded
-    assert calls == [("a", 60000), ("a", 60000), ("a", 49000)]          # הניסיון השלישי מוגבל לזמן שנשאר
-    assert fake_time.t - start <= 180.01
-    assert claude == []                                                   # חריגה בזמן: בלי גיבוי Claude ובלי מפתח נוסף
+    assert calls == [("a", 28000), ("a", 28000), ("b", 14000)]          # נעצר באמצע מפתח b: לא נשאר זמן ל-m2 או ל-Claude
+    assert fake_time.t - start <= 70.01
+    assert claude == []
 
 
 def test_not_enough_time_left_skips_the_wait_and_the_attempt(hanging, fake_time, monkeypatch):
-    set_models(monkeypatch, first="m1")
+    """מנגנון המתנה-חוזרת-ומתדלגת הכללי של _call_model (לא דרך extract(), שכבר לא ממתינה על אותו מודל)."""
     calls = hanging(["a"])
     start = fake_time.t
-    with extractor.page_budget(66):
-        res = extractor.extract([b"img"])
+    with extractor.page_budget(35):
+        res = extractor._run(["x"], PageExtraction, ["m1"], attempts_per_model=4)
     assert res["error_code"] == "page_timeout"
-    assert calls == [("a", 60000)]                      # נשארו 6 שניות: אחרי המתנה של 3 לא יישאר מינימום לניסיון, אז לא ממתינים
-    assert fake_time.t - start <= 66.01
+    assert calls == [("a", 28000)]                      # נשארו 7 שניות: אחרי המתנה של 3 לא יישאר מינימום לניסיון, אז לא ממתינים
+    assert fake_time.t - start <= 35.01
 
 
-def test_no_budget_context_keeps_the_old_behaviour(hanging, fake_time, monkeypatch):
+def test_no_budget_context_keeps_the_one_attempt_per_model_behaviour(hanging, fake_time, monkeypatch):
     set_models(monkeypatch, first="m1", fallbacks=["m2"])
     calls = hanging(["a"])
     res = extractor.extract([b"img"])
     assert "error_code" not in res or res["error_code"] != "page_timeout"
-    assert len(calls) == 8 and all(t == 60000 for _, t in calls)         # 4 ניסיונות x 2 מודלים, כמו קודם
+    assert calls == [("a", 28000), ("a", 28000)]        # ניסיון אחד לכל אחד משני המודלים, בלי המתנה, גם בלי תקציב
 
 
 def test_regions_chain_stops_on_budget(hanging, fake_time, claude, monkeypatch):
@@ -108,9 +123,9 @@ def test_budget_env_is_configurable_and_validated(monkeypatch):
 
 
 def test_process_page_returns_failed_page_with_code(hanging, fake_time, monkeypatch, tmp_path):
-    set_models(monkeypatch, first="m1")
+    set_models(monkeypatch, first="m1", fallbacks=["m2"])
     calls = hanging(["a"])
-    monkeypatch.setenv("PAGE_BUDGET_S", "30")
+    monkeypatch.setenv("PAGE_BUDGET_S", "20")           # פחות מ-TIMEOUT_MS (28): הניסיון על m1 מכלה את כל התקציב
     monkeypatch.setattr(pipeline, "cached_extract", lambda images: (extractor.extract(images), False))
     doc = pymupdf.open()
     doc.new_page()
@@ -118,7 +133,7 @@ def test_process_page_returns_failed_page_with_code(hanging, fake_time, monkeypa
     doc.save(str(path))
     out = pipeline.process_page(str(path), 1)
     assert out["error_code"] == "page_timeout" and out["pass1"]["error_code"] == "page_timeout" and out["pass1"]["ok"] is False
-    assert calls == [("a", 30000)]
+    assert calls == [("a", 20000)]                      # m2 לא נקרא כלל: בדיקת התקציב לפניו היא שעוצרת
 
 
 def test_pass2_budget_exhaustion_marks_the_page_but_keeps_pass1(monkeypatch, tmp_path):

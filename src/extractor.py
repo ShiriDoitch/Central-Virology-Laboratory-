@@ -25,10 +25,13 @@ from .schema import PageExtraction, RegionsExtraction
 
 load_dotenv()
 
-TIMEOUT_MS = 60_000          # 60 שניות לכל ניסיון (קריאת תמונה + JSON)
+TIMEOUT_MS = 28_000          # 28 שניות לכל ניסיון (קריאת תמונה + JSON). קוצר מ-60 (22.10.2026): ראו FIRST_PASS_ATTEMPTS.
 RETRY_WAITS_S = (3, 8, 20)   # המתנה לפני כל ניסיון חוזר על אותו מודל אחרי 503/timeout (עם jitter)
 JITTER = 0.25                # ±25% על כל המתנה
-ATTEMPTS_PER_MODEL = 1 + len(RETRY_WAITS_S)   # ניסיון + 3 חוזרים, ואז עוברים למודל הבא
+ATTEMPTS_PER_MODEL = 1 + len(RETRY_WAITS_S)   # ניסיון + 3 חוזרים, ואז עוברים למודל הבא (ברירת מחדל ל-_run; לא בשימוש במעבר הראשון, ראו הבא)
+FIRST_PASS_ATTEMPTS = 1      # מעבר ראשון (22.10.2026): ניסיון אחד למודל, בלי ניסיון חוזר על אותו מודל. כשל/timeout עובר מיד
+                             # למודל הבא, ואז למפתח הבא, ואז ל-Claude - כדי שהשרשרת המלאה תספיק להיכנס לתקציב הזמן של העמוד
+                             # (4 ניסיונות על מודל תקוע לבד כבר חרגו מהתקציב, לפני שמפתח/מודל/Claude אחר קיבלו הזדמנות).
 MAX_MODELS_PER_PAGE = 3      # לא יותר מ-3 מודלים לעמוד (מודל שמדולג בלי קריאה לא נספר)
 TRANSIENT_CODES = (429, 500, 503, 504)
 SECOND_PASS_FALLBACK_SLEEP_S = 3   # המתנה בין מודל חזק שנכשל בעומס/timeout לבא אחריו, במעבר השני
@@ -711,13 +714,15 @@ def _run_anthropic(contents: list, schema: type[BaseModel], models: list[str] | 
 
 def extract(images: list[bytes]) -> dict:
     """מעבר ראשון: תמונות של עמוד (בדרך כלל אחת) -> dict לפי PageExtraction + "model".
-    רץ על מודלים קטנים בלבד (model_chain)."""
-    res = _run([*[_image_part(img) for img in images], PROMPT], PageExtraction)
+    רץ על מודלים קטנים בלבד (model_chain), ניסיון אחד למודל (FIRST_PASS_ATTEMPTS) כדי שמודל/מפתח/Claude הבאים
+    יקבלו הזדמנות בתוך תקציב הזמן של העמוד (ראו CLAUDE.md סעיף 26)."""
+    res = _run([*[_image_part(img) for img in images], PROMPT], PageExtraction, attempts_per_model=FIRST_PASS_ATTEMPTS)
     if res.get("error_code") in PAYLOAD_ERROR_CODES:
         # בקשה גדולה / מטען לא תקין: לא חוזרים על אותה בקשה בכל מודל ומפתח. ניסיון אחד נוסף עם תמונה מוקטנת, ואם אין מה להקטין: נכשל מיד.
         smaller = [shrink_jpeg(img, RETRY_LONG_SIDE) for img in images]
         if smaller != list(images):
-            retry = _run([*[_image_part(img) for img in smaller], PROMPT], PageExtraction)
+            retry = _run([*[_image_part(img) for img in smaller], PROMPT], PageExtraction,
+                         attempts_per_model=FIRST_PASS_ATTEMPTS)
             stats = Counter(res.get("stats") or {})
             stats.update(retry.get("stats") or {})
             return {**retry, "stats": dict(stats), "downscaled_retry": True}
