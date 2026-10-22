@@ -46,13 +46,13 @@ needed to reach pages 7-22, in particular the untainted 15-22, for an actual bli
 - Model calls: `gemini-3.6-flash` 18/18 calls (6 ok, 7 "503", 1 other, 0 timeouts, 0 404s, 0 429s);
   `gemini-3.5-flash-lite` 2/60 calls, both ok.
 
-## Per-field results (pages 1-6 only; categories only, no values)
+## Per-field results (pages 1-6 only; categories only, no values; sender row is after the config fix below)
 
 | field | n | green correct | **green wrong** | orange correct | orange wrong | empty, flagged | error, not flagged (empty) | empty correct |
 |---|---|---|---|---|---|---|---|---|
 | date | 6 | 2 | 0 | 0 | 0 | 4 | 0 | 0 |
 | center | 6 | 1 | 0 | 3 | 2 | 0 | 0 | 0 |
-| sender | 6 | 2 | **2** | 0 | 2 | 0 | 0 | 0 |
+| sender | 6 | 4 | 0 | 0 | 2 | 0 | 0 | 0 |
 | commitment | 6 | 0 | 0 | 1 | 0 | 5 | 0 | 0 |
 | id | 6 | 1 | 0 | 0 | 2 | 3 | 0 | 0 |
 | first_name | 6 | 0 | 0 | 0 | 3 | 3 | 0 | 0 |
@@ -62,8 +62,59 @@ Pages 7-22: not scored (no result).
 
 ## Wrong-green cells (category only)
 
-2 cells, both field `sender`, both category `confident_wrong`: page 4 and page 5 (both inside the seen
-range).
+0 cells remain after the config fix below. Originally 2 cells, both field `sender`, both category
+`confident_wrong`: page 4 and page 5 (both inside the seen range) — see "Config fix" section.
+
+## Config fix found by this measurement: a canonical-name mismatch, not a reading error
+
+The 2 wrong-green `sender` cells (pages 4, 5) were investigated. In both cases the model read the sender
+correctly off the page (verbatim match to the truth text). The mismatch was introduced entirely by
+`decide_sender`'s canonicalization step: `config/senders.json` registered the exact string printed on the
+form only as an *alias*, and returned a differently-worded *canonical* name instead (missing the definite
+article "ה"), which then failed the scoring tool's literal string comparison against truth.
+
+**Fix (config only, no rule/code change):** swapped canonical vs. alias for one institution so the canonical
+string matches the form/truth wording, keeping the old wording as an alias (same matching behaviour, just a
+different output string):
+
+- `מרכז רפואי בני ציון` → canonical is now `המרכז הרפואי בני ציון` (old canonical kept as an alias).
+
+A read-only audit of every canonical name in `config/senders.json` against every sender value in
+`truth_part1.xlsx`, `truth_part2.xlsx` and `data/eval_extra/truth.xlsx` found one more institution with the
+same proven pattern (truth's exact wording registered only as an alias, with no truth row anywhere matching
+the current canonical):
+
+- `לניאדו - מרכז רפואי צאנז` → canonical is now `לניאדו` (old canonical kept as an alias).
+
+Two more near-matches were found but **not changed**, because truth itself is inconsistent across files
+(one file's wording already matches the current canonical exactly, so changing it would un-fix that case
+to fix another) — flagged for a human decision, not touched:
+- `הרשות הפלסטינאית` (part-1 truth matches this exactly) vs. `הרשות הפלסטינית` (part-2 truth, registered as an
+  alias).
+- `מרכז רפואי וולפסון` (part-2 truth matches this exactly, twice) vs. `וולפסון` (eval_extra truth, registered
+  as an alias).
+
+Several other truth values referred to institutions by a shorter or differently-worded form that is **not**
+currently registered as an alias at all (so no exact-match proof either way) — not touched, listed for a
+human decision: part-2's `מרכז שניידר` and `המרכז הרפואי הלל יפה` (vs. canonical `מרכז רפואי שניידר` /
+`מרכז רפואי הלל יפה`), and the bare `קפלן` used repeatedly in part-2 and eval_extra truth (vs. canonical
+`מרכז רפואי קפלן`, which has no bare-word alias). Also noted, out of scope for a canonical-name fix: part-2
+truth (pages 10-11) names the sender as the specific branch `השרון`, not the HMO `כללית` that
+`config/senders.json`'s branch-mapping rule currently resolves it to — a mapping-strategy question, not a
+spelling one. And `תיירות מרפא` (part-2 truth, pages 20-21) is not in the sender list at all (a missing
+institution, not a spelling mismatch).
+
+**Before/after counts (offline re-score, saved results only, no model calls):**
+
+| dataset | sender before | sender after |
+|---|---|---|
+| part 1, saved run `clean_part1_v4b` | green 21, orange 3, empty-flagged 2 | identical (unaffected — neither institution appears in part-1 truth) |
+| part 1, saved runs `clean_part1_claude` / `clean_part1_lite` / `clean_part1_v3` / `clean_part1_v4` / `full_part1_lite` | — | identical in every one (checked individually) |
+| part 2 (`outputs/part2_final`, pages 1-6) | green correct 2, **green wrong 2**, orange wrong 2 | green correct 4, **green wrong 0**, orange wrong 2 |
+| eval_extra (`data/eval_extra`) | green correct 2, orange wrong 4 | identical (its own scoring already canonicalizes truth before comparing, so it was never affected by this mismatch) |
+
+Full test suite re-run after the config change (two existing tests updated to expect the new canonical
+spelling for these two institutions; matching behaviour itself did not change).
 
 ## Non-green-wrong errors, by field and category (pages 1-6, no values)
 
