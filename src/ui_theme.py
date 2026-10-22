@@ -160,7 +160,7 @@ code {font-family: 'IBM Plex Mono', monospace !important; direction: ltr; unicod
       padding: 0 var(--sp-3) 0 0; margin: 0 0 var(--sp-1);}
 .lab-header .title {font-size: var(--fs-page); font-weight: 700; color: var(--ink); line-height: var(--lh-tight);}
 .lab-header .org {font-size: var(--fs-label); font-weight: 500; color: var(--accent);}
-.lab-header .hint {font-size: var(--fs-cap); color: var(--ink-3); margin-inline-start: auto;}
+.lab-subtitle {font-size: var(--fs-cap); color: var(--ink-3); margin: 0 0 var(--sp-3);}
 .sec {display: flex; align-items: baseline; gap: var(--sp-2); margin: var(--sp-1) 0 var(--sp-2);}
 .sec-title {font-size: var(--fs-section); font-weight: 600; color: var(--ink);}
 .sec-hint {font-size: var(--fs-cap); color: var(--ink-3);}
@@ -300,7 +300,9 @@ button[data-testid^="stBaseButton-"]:focus-visible, button[data-testid="stPopove
 [data-testid="stSlider"] label p {font-size: var(--fs-label) !important; color: var(--ink-2) !important;}
 /* תווית עברית מעל פקד שבו Streamlit לא מאפשר placeholder: הטקסט האנגלי הריק מוסתר */
 [data-testid="stDateInput"] input::placeholder {color: transparent;}
-[data-testid="stFileUploaderDropzone"] {background: var(--wash); border: 1px dashed var(--line-2); border-radius: var(--radius-sm);}
+[data-testid="stFileUploaderDropzone"] {background: var(--accent-soft); border: 1.5px dashed var(--accent-line); border-radius: var(--radius);
+      transition: border-color .15s ease, background .15s ease;}
+[data-testid="stFileUploaderDropzone"]:hover {border-color: var(--accent); background: #DFEAEC;}
 [data-testid="stFileUploaderDropzoneInstructions"] > div > span, [data-testid="stFileUploaderDropzoneInstructions"] small,
 [data-testid="stFileUploaderDropzoneInstructions"] svg {display: none;}
 [data-testid="stFileUploaderDropzoneInstructions"] > div::before {content: "גרירת קובץ PDF או תמונה לכאן (עד 25MB)"; font-size: 14px; color: var(--ink-2);}
@@ -323,10 +325,10 @@ button[data-testid^="stBaseButton-"]:focus-visible, button[data-testid="stPopove
    6. משטחים: כרטיס פעולה, פס מדדים, סרגל סינון, טבלה
    ============================================================ */
 .st-key-action_card {position: sticky; top: var(--sp-1); z-index: 100; background: var(--paper) !important; border: 1px solid var(--line) !important;
-      border-radius: var(--radius) !important; padding: var(--sp-2) var(--sp-2) !important; box-shadow: var(--shadow);}
-.st-key-action_card [data-testid="stFileUploaderDropzone"] {padding: 0 var(--sp-3); min-height: 40px; height: 40px;}
-.st-key-action_card [data-testid="stFileUploaderDropzone"] button {min-height: 30px; height: 30px; padding: 0 var(--sp-3);}
-.st-key-action_card .stButton > button, .st-key-action_card .stDownloadButton > button {height: 40px; min-height: 40px;}
+      border-radius: var(--radius) !important; padding: var(--sp-3) var(--sp-3) !important; box-shadow: var(--shadow);}
+.st-key-action_card [data-testid="stFileUploaderDropzone"] {padding: 0 var(--sp-4); min-height: 44px; height: 44px;}
+.st-key-action_card [data-testid="stFileUploaderDropzone"] button {min-height: 32px; height: 32px; padding: 0 var(--sp-3); border-radius: var(--radius-sm);}
+.st-key-action_card .stButton > button, .st-key-action_card .stDownloadButton > button {height: 44px; min-height: 44px;}
 .st-key-action_card [data-testid="stFileUploaderFile"] {margin-top: 2px;}
 .kpis {display: grid; grid-template-columns: repeat(7, minmax(0, 1fr)); background: var(--paper); border: 1px solid var(--line);
       border-radius: var(--radius); box-shadow: var(--shadow); overflow: hidden; margin: 2px 0 var(--sp-2);}
