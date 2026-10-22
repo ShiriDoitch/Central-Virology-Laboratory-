@@ -407,10 +407,14 @@ button[data-testid^="stBaseButton-"]:focus-visible, button[data-testid="stPopove
 [data-testid="stDataFrame"], [data-testid="stDataFrame"] canvas {direction: ltr;}
 
 /* ============================================================
-   7. מסך הרשומות: פס המונים, חיפוש, סינון מתקדם, שורת העימוד
+   7. מסך הרשומות: ארבעה כרטיסים (חיפוש וסינון, בדיקה, רשומות, ייצוא), באותו גוון מבטיח כמו הבאנר העליון
    ============================================================ */
-.st-key-rec_top {background: var(--paper) !important; border: 1px solid var(--line) !important; border-radius: var(--radius) !important;
-      box-shadow: var(--shadow); padding: var(--sp-3) var(--sp-3) var(--sp-2) !important;}
+/* אותו "שפת עיצוב" כמו פאנלי הפירוט (rec_detail, detail_panel): לבן, מסגרת דקה, קו עליון בגוון המותג, הצללה
+   ומרווח אחיד - כדי שארבעת הכרטיסים יראו כקבוצה אחת ולא כערימת פקדים חופשיים */
+.st-key-rec_top, .st-key-rec_review_card, .st-key-rec_table_card, .st-key-rec_export_card {
+      background: var(--paper) !important; border: 1px solid var(--line) !important; border-top: 3px solid var(--accent) !important;
+      border-radius: var(--radius) !important; box-shadow: var(--shadow); padding: var(--sp-3) var(--sp-4) var(--sp-4) !important;
+      margin-bottom: var(--sp-2);}
 .st-key-rec_counters {gap: 6px !important;}
 /* המונים כקבוצה מפולחת אחת: גלולות באותו גובה, הנבחרת במילוי המותג */
 .st-key-rec_counters .stButton > button {border-radius: var(--radius-pill); background: var(--wash); border-color: transparent;
@@ -476,8 +480,8 @@ button[data-testid^="stBaseButton-"]:focus-visible, button[data-testid="stPopove
 /* ============================================================
    8ב. בדיקה במבט אחד (review_screen.py): שורת הפתיחה מעל הטבלה, כרטיס התא, ולוח האיכות
    ============================================================ */
-.st-key-rev_bar {background: var(--paper) !important; border: 1px solid var(--line) !important; border-radius: var(--radius) !important;
-      box-shadow: var(--shadow); padding: var(--sp-2) var(--sp-3) !important;}
+/* שורת ההתחלה של records_screen.py (לא review_screen.py): יושבת כבר בתוך כרטיס "בדיקה" (סעיף 7),
+   ולכן בלי עיצוב כרטיס משלה - רק גובה אחיד לכפתורים */
 .st-key-rev_bar .stButton > button {height: 38px; min-height: 38px; white-space: nowrap;}
 .st-key-rv_card {background: var(--paper) !important; border: 1px solid var(--line) !important; border-top: 3px solid var(--accent) !important;
       border-radius: var(--radius) !important; box-shadow: var(--shadow-lift); padding: var(--sp-4) var(--sp-5) var(--sp-5) !important;}

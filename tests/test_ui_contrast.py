@@ -58,6 +58,8 @@ def pairs() -> list[tuple[str, str, str]]:
         ("גלולת סינון \"הכול\", נבחרת", t["on-accent"], t["accent"]),
         ("גלולת סינון \"ריק\", לא נבחרת", t["ink-3"], t["paper"]),
         ("שורה שקטה על רקע בהיר", t["ink-3"], t["wash"]),
+        ("כותרת כרטיס (section) בכרטיסי מסך הרשומות", t["ink"], t["paper"]),
+        ("תווית קבוצה (group label) על רקע כרטיס לבן", t["ink-2"], t["paper"]),
     ]
     for state in ui.STATES:
         out += [

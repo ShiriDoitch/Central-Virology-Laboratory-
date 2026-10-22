@@ -52,7 +52,7 @@ def render_top(counts: dict) -> str:
     search_col, counter_col = st.columns([2, 3.3], vertical_alignment="bottom")
     search = search_col.text_input("חיפוש בכל הרשומות", key="rec_search", placeholder="שם, ת\"ז, מס' התחייבות או מרכזי")
     with counter_col:
-        st.markdown("<div class='ro-label'>תצוגה לפי סטטוס</div>", unsafe_allow_html=True)
+        st.markdown(ui.group_label("סטטוס", "אילו רשומות מוצגות בטבלה"), unsafe_allow_html=True)
         current = list(st.session_state.get("rec_status") or [])
         with st.container(horizontal=True, gap="small", key="rec_counters"):
             for label, key, statuses, n in (("תור עבודה", "queue", list(service.WORK_QUEUE), queue),
@@ -263,7 +263,7 @@ def render_bulk_approve(flt: service.RecordFilter, safe: int) -> None:
 
 
 def render_review_bar(conn, flt: service.RecordFilter) -> None:
-    """שורה אחת מעל הטבלה: התחלת בדיקה מונחית על הרשומות שבסינון, ואישור קבוצתי של הרשומות הבטוחות."""
+    """שורה אחת בתוך כרטיס "בדיקה": התחלת בדיקה מונחית על הרשומות שבסינון, ואישור קבוצתי של הרשומות הבטוחות."""
     try:
         counts = service.review_counts(conn, flt)
     except Exception as e:
@@ -493,12 +493,15 @@ def _render_main(db, he_flag) -> None:
         st.markdown("<div class='empty-state'><b>אין עדיין רשומות</b><p>עיבוד קובץ במסך \"עיבוד\" ישמור את הרשומות כאן.</p></div>",
                     unsafe_allow_html=True)
         return
-    with st.container(key="rec_top"):
+    with st.container(border=True, key="rec_top"):
+        st.markdown(ui.section("חיפוש וסינון"), unsafe_allow_html=True)
         search = render_top(counts)
         flt = read_filter(options, search)
     st.session_state["_rec_flt"] = flt                                  # לשימוש ה-callbacks (הבאה בתור) ולמבחנים
-    render_review_bar(conn, flt)
-    render_quality_panel(conn)
+    with st.container(border=True, key="rec_review_card"):
+        st.markdown(ui.section("בדיקה"), unsafe_allow_html=True)
+        render_review_bar(conn, flt)
+        render_quality_panel(conn)
     size = st.session_state.get("rec_size", PAGE_SIZES[1])
     _rows, total = service.query(conn, flt, limit=1, offset=0)
     pages_n = max(1, -(-total // size))
@@ -517,31 +520,34 @@ def _render_main(db, he_flag) -> None:
     if msg:
         getattr(st, msg[0])(msg[1])
     selected_id = None
-    if not rows:
-        st.markdown("<div class='empty-filter'><b>אין רשומות להצגה</b>אין רשומות שמתאימות לחיפוש או לסינון.</div>", unsafe_allow_html=True)
-    else:
-        try:      # מפתח הרשת כולל עמוד וגל פעולות: בחירה ישנה (אינדקס) לא עוברת לשורה אחרת אחרי החלפת עמוד / אישור / "הבאה בתור"
-            table = _table(rows)
-            event = st.dataframe(_styled(table, rows), width="stretch", hide_index=True, on_select="rerun", selection_mode="single-row",
-                                 column_config=_table_config(table),
-                                 key=f"rec_grid_{abs(hash(sig))}_{page}_{st.session_state.get('_rec_gen', 0)}",
-                                 height=min(520, 40 + 40 * len(rows)))
-            if event.selection.rows:
-                selected_id = rows[event.selection.rows[0]]["id"]
-                st.session_state["rec_open"] = selected_id
-        except Exception:                                                  # גרסת Streamlit בלי בחירת שורה
-            selected_id = st.selectbox("רשומה", [r["id"] for r in rows], format_func=lambda i: f"רשומה {i}")
-    # שורה שקטה אחת מתחת לטבלה: מה מוצג, עימוד וייצוא
-    with st.container(key="rec_pager"):
-        info_col, page_col, size_col, exp_col = st.columns([1.7, 1, 1, 1.5], vertical_alignment="center")
-        info_col.markdown(ui.quiet(f"<b>{total}</b> רשומות מתאימות · עמוד {page} מתוך {pages_n}"), unsafe_allow_html=True)
-        page_col.number_input("עמוד", 1, pages_n, key="rec_page")
-        size_col.selectbox("שורות בעמוד", PAGE_SIZES, index=PAGE_SIZES.index(size), key="rec_size")
-        with exp_col:
-            render_export(conn, flt, total)
+    with st.container(border=True, key="rec_table_card"):
+        st.markdown(ui.section("רשומות"), unsafe_allow_html=True)
+        if not rows:
+            st.markdown("<div class='empty-filter'><b>אין רשומות להצגה</b>אין רשומות שמתאימות לחיפוש או לסינון.</div>", unsafe_allow_html=True)
+        else:
+            try:      # מפתח הרשת כולל עמוד וגל פעולות: בחירה ישנה (אינדקס) לא עוברת לשורה אחרת אחרי החלפת עמוד / אישור / "הבאה בתור"
+                table = _table(rows)
+                event = st.dataframe(_styled(table, rows), width="stretch", hide_index=True, on_select="rerun", selection_mode="single-row",
+                                     column_config=_table_config(table),
+                                     key=f"rec_grid_{abs(hash(sig))}_{page}_{st.session_state.get('_rec_gen', 0)}",
+                                     height=min(520, 40 + 40 * len(rows)))
+                if event.selection.rows:
+                    selected_id = rows[event.selection.rows[0]]["id"]
+                    st.session_state["rec_open"] = selected_id
+            except Exception:                                                  # גרסת Streamlit בלי בחירת שורה
+                selected_id = st.selectbox("רשומה", [r["id"] for r in rows], format_func=lambda i: f"רשומה {i}")
+        # עימוד: כותרת קבוצה קריאה ושורת פקדים אחת, מסודרת מתחת לטבלה (לא צפה לבד בשוליים)
+        with st.container(key="rec_pager"):
+            st.markdown(ui.group_label("עימוד", f"{total} רשומות מתאימות · עמוד {page} מתוך {pages_n}"), unsafe_allow_html=True)
+            page_col, size_col = st.columns([1, 1], vertical_alignment="center")
+            page_col.number_input("עמוד", 1, pages_n, key="rec_page")
+            size_col.selectbox("שורות בעמוד", PAGE_SIZES, index=PAGE_SIZES.index(size), key="rec_size")
     if not selected_id:
         selected_id = st.session_state.get("rec_open")                  # רשומה שנפתחה (הבאה בתור / אחרי אישור), גם אם הסינון מסתיר אותה
+    with st.container(border=True, key="rec_export_card"):
+        st.markdown(ui.section("ייצוא"), unsafe_allow_html=True)
+        render_export(conn, flt, total)
+        if not selected_id:
+            st.markdown("בחירת שורה בטבלה פותחת אותה לתיקון ולאישור.")
     if selected_id:
         render_detail(conn, selected_id, he_flag)
-    else:
-        st.caption("בחירת שורה בטבלה פותחת אותה לתיקון ולאישור.")

@@ -358,3 +358,34 @@ def test_close_button_is_a_small_icon_with_an_accessible_label(monkeypatch):
     close = next(b for b in at.button if b.key == "close_detail")
     assert close.label == "✕" and close.proto.help == "סגירת הכרטיס"
     assert close.proto.type == "tertiary"                          # לא ראשי ולא משני-כמו-פעולה
+
+
+# ---------- מסך הרשומות: ארבעה כרטיסים מכותרים (חיפוש וסינון / בדיקה / רשומות / ייצוא) ----------
+
+def test_records_screen_is_organized_into_four_titled_cards(db):
+    seed(db, {1: [cells(id=ORANGE)], 2: [cells()]})
+    at = records_app()
+    body = "\n".join(m.value for m in at.markdown if not m.value.startswith("<style>"))
+    for title in ("חיפוש וסינון", "בדיקה", "רשומות", "ייצוא"):
+        assert f"<span class='sec-title'>{title}</span>" in body, title
+
+
+def test_the_old_tiny_floating_status_label_is_replaced_by_a_clear_group_label(db):
+    seed(db, {1: [cells()]})
+    body = "\n".join(m.value for m in records_app().markdown if not m.value.startswith("<style>"))
+    assert "ro-label'>תצוגה לפי סטטוס" not in body                 # הכיתוב והמחלקה הישנים (תווית חלשה) הוסרו
+    assert "class='group-label'" in body and "סטטוס" in body
+
+
+def test_the_choose_a_row_hint_is_a_readable_line_not_a_tiny_caption(db):
+    seed(db, {1: [cells()]})
+    at = records_app()
+    assert not [c for c in at.caption if "בחירת שורה" in c.value]  # לא עוד st.caption (טקסט אפור קטן)
+    assert any("בחירת שורה בטבלה פותחת אותה לתיקון ולאישור" in m.value for m in at.markdown)
+
+
+def test_the_pager_row_is_labelled_as_a_paging_group(db):
+    """פקדי העימוד מקובצים מתחת לטבלה עם תווית קבוצה קריאה ("עימוד"), לא צפים לבד בשוליים."""
+    seed(db, {n: [cells()] for n in range(1, 4)})
+    body = "\n".join(m.value for m in records_app().markdown if not m.value.startswith("<style>"))
+    assert "class='group-label'" in body and ">עימוד<" in body
